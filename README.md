@@ -227,7 +227,7 @@ Underscores become spaces, except in emoticons such as `^_^`.
 <summary><b>🔗 Connecting to ComfyUI</b></summary>
 
 - Prompto checks the ComfyUI address in **Settings** every few seconds (default `http://127.0.0.1:8188`). The header shows **offline**, **live**, **tab open** or **linked**.
-- **Load into workflow** and **Selected node** edit the workflow in your open ComfyUI tab. Settings go to the first sampler, so a hires-fix pass keeps its own steps, and dropdown values are only set when ComfyUI offers them.
+- **Load into workflow** and **Selected node** edit the workflow in your open ComfyUI tab. Snippets' **→ Node** goes into the prompt box you last clicked into (at the cursor), or else the selected text nodes. Settings go to the first sampler, so a hires-fix pass keeps its own steps, and dropdown values are only set when ComfyUI offers them.
 - **LoRAs** fill the workflow's existing LoRA loader nodes in order, matched by file name even across folders, with the recipe's weight on both model and CLIP. Loaders the recipe doesn't use, or whose LoRA isn't installed, are bypassed, and Prompto says when the workflow needs more loader nodes. It never adds nodes itself.
 - With **ComfyUI-Prompto** installed, Prompto works through its bridge instead of ComfyUI's internals, syncs your library to the ComfyUI sidebar, and collects captures from ComfyUI.
 - Recent ComfyUI versions turn away requests that come straight from extensions. That's why Prompto goes through the open tab. **Queue saved graph** calls the API directly and may need ComfyUI started with `--enable-cors-header`.

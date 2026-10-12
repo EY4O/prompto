@@ -7,6 +7,8 @@ import { attachAutocomplete } from "./lib/autocomplete.js";
 import { tagDiff, wordDiff, settingsDiff, changed } from "./lib/diff.js";
 import { cardPng, asciiJson } from "./lib/card.js";
 import { detect as detectForeign, convert as convertForeign } from "./lib/importers.js";
+import { stamp, fingerprints, merge as mergeSync, toSyncFile, fromSyncFile, apply as applySync } from "./lib/sync.js";
+import * as syncfs from "./lib/syncfs.js";
 import { hasWildcards, wildcardNames, expand, seededRandom, slug } from "./lib/wildcards.js";
 import { fetchLook, draftCharacter, postFromGroups, sceneTags } from "./lib/booru.js";
 import { DEFAULT_COMFY, normalizeBase, originPattern, ping, findTab, queueGraph, applyInTab, bridgeCall, fetchLoras, queueInTab } from "./lib/comfy.js";
@@ -31,18 +33,25 @@ const store = {
 
 let db;
 const ui = {
+  sync: { handle: null, state: "off", at: 0, error: "", busy: false, timer: 0 },
   rolls: {}, comparing: false, cmpPick: [], refPick: null, pendingForeign: null, folder: "all", picking: false, picked: new Set(), renamingFolder: null, tab: "inbox", recipeId: null, openChar: null, openProfile: null, q: "", filter: "all", sort: "new", lightbox: null, diffId: null,
   importId: null, sheet: null,
   comfyLive: false, comfyTab: null, bridge: null, syncedRev: -1, focus: null, pendingImport: null, rev: 0
 };
 let saveTimer;
-const persist = () => { ui.rev++; clearTimeout(saveTimer); saveTimer = setTimeout(() => store.save(db), 250); };
+const persist = () => {
+  ui.rev++;
+  clearTimeout(saveTimer); saveTimer = setTimeout(() => store.save(db), 250);
+  if (ui.sync.state === "on") { clearTimeout(ui.sync.timer); ui.sync.timer = setTimeout(() => syncNow("change"), 4000); }
+};
 
 // Brings any saved library (or an imported file) up to the current shape.
 function migrate(d) {
   for (const k of ["inbox", "recipes", "characters", "snippets"]) if (!Array.isArray(d[k])) d[k] = [];
   if (!d.profiles || !Object.keys(d.profiles).length) d.profiles = structuredClone(DEFAULT_PROFILES);
-  d.settings = { comfyUrl: DEFAULT_COMFY, onlineTags: true, proseTemplates: {}, autoResults: true, ...(d.settings || {}) };
+  d.settings = { comfyUrl: DEFAULT_COMFY, onlineTags: true, proseTemplates: {}, autoResults: true, deviceName: "", ...(d.settings || {}) };
+  if (!d.settings.deviceName) d.settings.deviceName = "Device " + Math.random().toString(36).slice(2, 6).toUpperCase();
+  if (!Array.isArray(d.tombstones)) d.tombstones = [];
   if (!Array.isArray(d.recentSends)) d.recentSends = [];
   if (!Array.isArray(d.folders)) d.folders = [];
   for (const r of d.recipes) { if (!Array.isArray(r.runs)) r.runs = []; if (!Array.isArray(r.versions)) r.versions = []; }
@@ -868,6 +877,71 @@ function importCard(item) {
   go("recipe/" + r.id);
 }
 
+// ---------- Sync between devices ----------
+// Read the shared file, merge it with this library item by item, write the
+// result back. Runs a few seconds after changes and every minute.
+async function syncNow(reason = "manual") {
+  const s = ui.sync;
+  if (!s.handle || s.busy) return;
+  s.busy = true;
+  try {
+    db.syncHashes = stamp(db, db.syncHashes || {});
+    const remote = fromSyncFile(await syncfs.readSync(s.handle));
+    let changed = false;
+    if (remote) {
+      const before = fingerprints(db);
+      applySync(db, mergeSync(db, remote));
+      const after = fingerprints(db);
+      changed = Object.keys({ ...before, ...after }).some((k) => before[k] !== after[k]);
+    }
+    await syncfs.writeSync(s.handle, toSyncFile(db, db.settings.deviceName));
+    db.syncHashes = fingerprints(db);
+    s.at = Date.now(); s.state = "on"; s.error = "";
+    db.settings.lastSyncAt = s.at;
+    await store.save(db);
+    if (changed) {
+      toast("Synced changes from another device");
+      if (!view.contains(document.activeElement) || document.activeElement === document.body) draw();
+    } else if (reason === "manual") toast("Synced");
+    if (ui.tab === "settings" && !view.contains(document.activeElement)) draw();
+  } catch (e) {
+    s.error = e && e.name === "NotAllowedError" ? "Prompto lost access to the folder. Reconnect it." : (e && e.message) || "Sync failed";
+    s.state = e && e.name === "NotAllowedError" ? "prompt" : "error";
+    if (reason === "manual") toast(s.error);
+    if (ui.tab === "settings") draw();
+  } finally { s.busy = false; }
+}
+
+async function startSync(ask) {
+  const s = ui.sync;
+  if (!s.handle) return;
+  const state = await syncfs.permission(s.handle, ask).catch(() => "denied");
+  s.state = state === "granted" ? "on" : state;
+  if (s.state === "on") await syncNow(ask ? "manual" : "start");
+  else if (ui.tab === "settings") draw();
+}
+
+function syncCard() {
+  const s = ui.sync;
+  if (!syncfs.supported()) return `<p class="hint">This browser can't open folders, so sync isn't available here.</p>`;
+  const status = !s.handle ? "Not set up"
+    : s.state === "on" ? `Synced ${s.at ? ago(s.at) : "—"} · ${esc(s.handle.name)}`
+    : s.state === "prompt" ? `Paused · ${esc(s.handle.name)} needs permission again`
+    : s.state === "error" ? `Error · ${esc(s.error)}` : "Off";
+  return `<section class="tk" style="--stub:0px;padding-bottom:14px">
+    <div class="tk-bg"></div>
+    <div class="tk-head"><span class="tag">Sync</span><span class="kv">${status}</span></div>
+    <p class="hint" style="margin-top:8px">Pick a folder your cloud service keeps in sync (OneDrive, Dropbox, Google Drive). Prompto keeps <span class="mono">prompto-sync.json</span> there and merges it with each device's library: the newer edit wins, and deletions carry over. Each device keeps its own ComfyUI address and LoRA list.</p>
+    <div class="settings-grid"><label class="full">This device<input id="device-name" value="${esc(db.settings.deviceName)}" spellcheck="false"></label></div>
+    <div class="row" style="margin-top:10px">
+      ${!s.handle ? `<button class="btn sm" data-act="sync-choose">Choose sync folder <i aria-hidden="true">→</i></button>`
+        : s.state === "prompt" ? `<button class="btn sm" data-act="sync-reconnect">Reconnect folder</button>`
+        : `<button class="btn ghost sm" data-act="sync-now">Sync now</button>`}
+      ${s.handle ? `<button class="link" data-act="sync-choose">Change folder</button><button class="link" data-act="sync-stop">Stop syncing</button>` : ""}
+    </div>
+  </section>`;
+}
+
 // ---------- Versions ----------
 // A snapshot is taken whenever a recipe leaves Prompto (copied, loaded, queued)
 // and whenever you press Save version, unless nothing changed since the last one.
@@ -1378,6 +1452,9 @@ function drawSettings() {
         : "Install ComfyUI-Prompto in ComfyUI for a Prompto sidebar there, right-click “Save to Prompto”, and auto-capture of saved images."}</p>
     </section>
 
+    <div class="sec">Sync</div>
+    ${syncCard()}
+
     <div class="sec">Library</div>
     <section class="tk" style="--stub:0px;padding-bottom:14px">
       <div class="tk-bg"></div>
@@ -1762,6 +1839,16 @@ document.addEventListener("click", async (e) => {
       db.settings.comfyUrl = base; persist(); toast("Saved " + base); heartbeat(); draw(); break;
     }
     case "export": exportLibrary(); break;
+    case "sync-choose": {
+      try { ui.sync.handle = await syncfs.chooseFolder(); }
+      catch (e) { if (e && e.name !== "AbortError") toast("Couldn't open that folder"); return; }
+      await startSync(true); break;
+    }
+    case "sync-reconnect": await startSync(true); break;
+    case "sync-now": await syncNow("manual"); break;
+    case "sync-stop":
+      if (!armed(el, "Press again to stop")) return;
+      await syncfs.forgetFolder(); ui.sync = { ...ui.sync, handle: null, state: "off", at: 0, error: "" }; draw(); toast("Sync stopped; this device keeps its library"); break;
     case "lora-refresh": refreshLoras(ui.comfyTab, true).then(() => draw()); break;
     case "import-cancel": ui.pendingImport = null; draw(); break;
     case "foreign-add": applyForeign(); break;
@@ -1842,6 +1929,7 @@ document.addEventListener("input", (e) => {
   const r = ui.recipeId && recipeById(ui.recipeId);
   if (t.dataset.sheet === "name") { ui.sheet.drafts[t.dataset.d].name = t.value; return; }
   if (t.dataset.sheet === "outfit") { ui.sheet.drafts[t.dataset.d].outfitName = t.value; return; }
+  if (t.id === "device-name") { db.settings.deviceName = t.value.trim() || db.settings.deviceName; return store.save(db); }
   if (t.id === "title") { r.title = t.value; return persist(); }
   if (t.id === "neg") { r.negative = t.value; persist(); return drawOutput(r); }
   if (t.dataset.loraW != null) {
@@ -2052,4 +2140,9 @@ async function drainCaptures() {
   route();
   heartbeat();
   setInterval(heartbeat, 8000);
+  if (syncfs.supported()) {
+    ui.sync.handle = await syncfs.savedFolder();
+    if (ui.sync.handle) await startSync(false);
+    setInterval(() => { if (ui.sync.state === "on") syncNow("poll"); }, 60000);
+  }
 })();

@@ -17,6 +17,8 @@ lib/diff.js          tag and word diffs for recipe versions
 lib/wildcards.js     {a|b} and __name__ wildcards, seeded rolls
 lib/card.js          share cards: ticket drawing and PNG text chunks
 lib/importers.js     readers for other prompt tools' files
+lib/sync.js          item-by-item merge for sync (stamps, tombstones; no DOM)
+lib/syncfs.js        the sync folder: picker, saved handle, prompto-sync.json
 lib/tags.js          tag list (CSV → IndexedDB), library tags, Danbooru tag lookups
 lib/autocomplete.js  the tag suggestion dropdown
 lib/comfy.js         ComfyUI heartbeat, tab bridge, in-page graph editing, queueing

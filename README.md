@@ -26,7 +26,7 @@ A Chrome side-panel extension for people who make images with Stable Diffusion, 
 - ⌨️ **Tag autocomplete** — suggestions from your own library, an imported Danbooru tag list (with post counts and aliases), and live Danbooru lookups.
 - 🎚️ **Prompt tools** — scroll over a tag to weight it, `{a|b}` and `__snippet__` wildcards with a roll button, a CLIP token counter, and a checker for duplicates, contradictions and over-weighted tags.
 - 🔗 **ComfyUI and Forge** — load a recipe, LoRAs included, straight into the open ComfyUI workflow, or copy it in Forge's format and fill in every setting with one click.
-- 💾 **Yours to keep and share** — everything stays in your browser, with JSON backups, PNG share cards for recipes and characters, and imports from other prompt managers. No account, and no AI.
+- 💾 **Yours to keep and share** — everything stays on your devices, synced through a folder you choose (OneDrive, Dropbox…), with JSON backups, PNG share cards and imports from other prompt managers. No account, and no AI.
 
 ## 📸 Screenshots
 
@@ -257,6 +257,18 @@ Underscores become spaces, except in emoticons such as `^_^`.
 | chants `.json` | [a1111 tag-autocomplete](https://github.com/DominikDoom/a1111-sd-webui-tagcomplete) | snippets in **Chants** |
 
 A preview shows what will be added. Snippets already in the library (same category and name) and recipes with the same prompt are skipped, so importing the same file twice adds nothing. Weighted groups like `(worst quality, low quality:1.4)` become separate tags that keep the weight.
+</details>
+
+<details>
+<summary><b>🔄 Sync between devices</b></summary>
+
+**Settings → Sync → Choose sync folder** picks a folder, ideally one that OneDrive, Dropbox or Google Drive already keeps in sync. Prompto keeps `prompto-sync.json` there and, on every device that uses the same folder:
+
+- merges it with the local library a few seconds after each change and once a minute;
+- compares item by item: the newer edit of a recipe, cast member, snippet, folder, inbox item or profile wins, and your prose templates travel too;
+- remembers deletions for 90 days, so something deleted on one device disappears on the others (unless it was edited there after the deletion).
+
+Each device keeps its own ComfyUI address, LoRA list and Danbooru setting. Chrome may ask you to **Reconnect folder** once per session; that's Chrome confirming Prompto may still write there. If two devices save at the very same moment, your cloud service may keep a conflicted copy of the file; Prompto carries on with its own.
 </details>
 
 <details>

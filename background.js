@@ -1,9 +1,10 @@
 // Capture plumbing. Everything captured here lands in `captures`; the side
 // panel drains that queue into its inbox, so the two never overwrite each other.
+import { postIdFromUrl, fetchPost } from "./lib/booru.js";
 
 const BOORU_PATTERNS = [
-  "https://danbooru.donmai.us/posts/*",
-  "https://safebooru.donmai.us/posts/*",
+  "https://danbooru.donmai.us/*",
+  "https://safebooru.donmai.us/*",
   "https://gelbooru.com/*",
   "https://safebooru.org/*"
 ];
@@ -15,8 +16,8 @@ chrome.runtime.onInstalled.addListener(() => {
     chrome.contextMenus.create({ id: "prompto-image", title: "Save image to Prompto", contexts: ["image"] });
     chrome.contextMenus.create({
       id: "prompto-booru",
-      title: "Import post tags to Prompto",
-      contexts: ["page", "image"],
+      title: "Import post to Prompto",
+      contexts: ["page", "image", "link"],
       documentUrlPatterns: BOORU_PATTERNS
     });
   });
@@ -49,7 +50,15 @@ function scrapeBooruTags() {
       (groups[type] || groups.general).push(name.replace(/_/g, " "));
     });
   }
-  return { groups, title: document.title };
+  const img = document.querySelector("#image, #image-container img, img#img");
+  return { groups, title: document.title, image: img ? img.src : null };
+}
+
+// Danbooru posts come from the JSON API: exact categories, no page scraping.
+async function captureDanbooru(ref, extra = {}) {
+  const post = await fetchPost(ref.host, ref.id);
+  await pushCapture({ kind: "booru", post, url: post.url, source: new URL(ref.host).hostname, title: post.characters.join(", ") || "Post " + post.id, ...extra });
+  return post;
 }
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -59,13 +68,29 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   } else if (info.menuItemId === "prompto-image") {
     await pushCapture({ kind: "image", image: info.srcUrl, url: tab && tab.url, source });
   } else if (info.menuItemId === "prompto-booru" && tab) {
+    // A thumbnail link in search results points at its post; otherwise use the page.
+    const ref = postIdFromUrl(info.linkUrl || "") || postIdFromUrl(tab.url);
     try {
+      if (ref) return void (await captureDanbooru(ref));
       const [{ result }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: scrapeBooruTags });
-      await pushCapture({ kind: "booru", groups: result.groups, title: result.title, url: tab.url, source, image: info.srcUrl });
+      await pushCapture({ kind: "booru", groups: result.groups, title: result.title, url: tab.url, source, image: info.srcUrl || result.image });
     } catch (e) {
-      await pushCapture({ kind: "text", text: "Couldn't read tags from this page.", url: tab.url, source });
+      await pushCapture({ kind: "text", text: "Couldn't read tags from " + (info.linkUrl || tab.url) + ": " + e.message, url: tab.url, source });
     }
   }
+});
+
+// The "+ Prompto" button on Danbooru character tags.
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (!msg || msg.type !== "prompto:character") return;
+  // Open the panel first, while the click still counts as a user gesture.
+  if (sender.tab) chrome.sidePanel.open({ tabId: sender.tab.id }).catch(() => {});
+  const ref = postIdFromUrl(msg.url);
+  if (!ref) { reply({ ok: false, error: "Not a Danbooru post" }); return; }
+  captureDanbooru(ref, { focus: msg.tag || null, openSheet: true })
+    .then(() => reply({ ok: true }))
+    .catch((e) => reply({ ok: false, error: e.message }));
+  return true; // reply asynchronously
 });
 
 chrome.omnibox.setDefaultSuggestion({ description: "Save to your Prompto inbox" });

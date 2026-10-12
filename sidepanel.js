@@ -3,6 +3,7 @@ import { readRecipeFromFile, parseComfy } from "./lib/pngmeta.js";
 import { SEED } from "./lib/seed.js";
 import { loadTagList, importTagCsv, clearTagList, tagListInfo, searchLocal, libraryTags, searchLibrary, searchDanbooru } from "./lib/tags.js";
 import { attachAutocomplete } from "./lib/autocomplete.js";
+import { fetchLook, draftCharacter, postFromGroups, sceneTags } from "./lib/booru.js";
 import { DEFAULT_COMFY, normalizeBase, originPattern, ping, findTab, queueGraph, applyInTab, bridgeCall } from "./lib/comfy.js";
 
 const hasChrome = typeof chrome !== "undefined" && chrome.storage && chrome.storage.local;
@@ -26,6 +27,7 @@ const store = {
 let db;
 const ui = {
   tab: "inbox", recipeId: null, openChar: null, openProfile: null, q: "", filter: "all",
+  importId: null, sheet: null,
   comfyLive: false, comfyTab: null, bridge: null, syncedRev: -1, focus: null, pendingImport: null, rev: 0
 };
 let saveTimer;
@@ -131,8 +133,9 @@ $("#theme-btn").addEventListener("click", () => {
 const TABS = ["inbox", "recipes", "characters", "snippets", "settings"];
 function route() {
   const [tab, id] = location.hash.replace(/^#/, "").split("/");
-  ui.recipeId = null;
+  ui.recipeId = null; ui.importId = null;
   if (tab === "recipe" && id && recipeById(id)) { ui.tab = "recipes"; ui.recipeId = id; }
+  else if (tab === "import" && id && db.inbox.some((i) => i.id === id && i.kind === "booru")) { ui.tab = "inbox"; ui.importId = id; }
   else if (tab === "cast") { ui.tab = "characters"; ui.openChar = id || ui.openChar; }
   else if (TABS.includes(tab)) ui.tab = tab;
   draw();
@@ -147,8 +150,9 @@ function draw() {
   });
   $("#settings-btn").setAttribute("aria-pressed", String(ui.tab === "settings"));
   $("#count-inbox").textContent = db.inbox.length || "";
-  $(".search").hidden = !!ui.recipeId || ui.tab === "settings";
+  $(".search").hidden = !!ui.recipeId || !!ui.importId || ui.tab === "settings";
   if (ui.recipeId) drawRecipe();
+  else if (ui.importId) drawImport();
   else ({ inbox: drawInbox, recipes: drawRecipes, characters: drawCast, snippets: drawSnippets, settings: drawSettings })[ui.tab]();
   if (ui.focus) { $(ui.focus)?.focus(); ui.focus = null; }
 }
@@ -163,12 +167,13 @@ function slip(item) {
     body = `<p class="slip-text">${esc(item.text)}</p>`;
     files = [["recipe", "Recipe"], ["snippet", "Snippet"]];
   } else if (item.kind === "booru") {
-    const g = item.groups;
+    const post = postOf(item);
     const chipList = (arr, n = 99) => arr.slice(0, n).map((t) => `<span class="chip ro">${esc(t)}</span>`).join("") + (arr.length > n ? `<span class="chip ro">+${arr.length - n}</span>` : "");
-    body = [["character", "Character"], ["copyright", "Series"], ["general", "General"]]
-      .filter(([k]) => g[k] && g[k].length)
-      .map(([k, l]) => `<div class="group-label">${l}</div><div class="chips">${chipList(g[k], 10)}</div>`).join("");
-    files = [["character", "Cast"], ["snippet", "Snippet"]];
+    body = (post.preview ? `<img class="slip-thumb" src="${esc(post.preview)}" alt="">` : "")
+      + [["characters", "Character"], ["copyrights", "Series"], ["general", "General"]]
+        .filter(([k]) => post[k].length)
+        .map(([k, l]) => `<div class="group-label">${l}</div><div class="chips">${chipList(post[k], 10)}</div>`).join("");
+    files = post.characters.length ? [["import", "Cast…"], ["snippet", "Snippet"]] : [["snippet", "Snippet"]];
   } else if (item.kind === "png") {
     label = "PNG · " + item.format;
     const s = item.meta.settings;
@@ -199,7 +204,8 @@ function slip(item) {
 }
 
 function drawInbox() {
-  const items = db.inbox.filter((i) => matches(ui.q, i.text, i.title, i.source, i.meta && i.meta.positive, i.groups && Object.values(i.groups).flat().join(" ")));
+  const items = db.inbox.filter((i) => matches(ui.q, i.text, i.title, i.source, i.meta && i.meta.positive,
+    i.kind === "booru" && [...postOf(i).characters, ...postOf(i).general].join(" ")));
   view.innerHTML = `
     <div class="capture">
       <textarea id="cap-text" rows="2" placeholder="Paste tags or jot an idea. Ctrl+Enter saves."></textarea>
@@ -254,31 +260,158 @@ function fileItem(id, as) {
     done();
     toast("Filed as recipe");
     go("recipe/" + r.id);
+  } else if (as === "import") {
+    go("import/" + id);
   } else if (as === "snippet") {
-    const text = item.kind === "booru" ? item.groups.general.join(", ") : item.text;
-    const tags = item.kind === "booru" || looksLikeTags(text);
+    const post = item.kind === "booru" ? postOf(item) : null;
+    const text = post ? post.general.join(", ") : item.text;
+    const tags = !!post || looksLikeTags(text);
     db.snippets.unshift({
       id: uid("sn"), cat: "Unsorted",
-      name: item.kind === "booru" ? (item.groups.character[0] || "Booru tags") : text.split(/[,.]/)[0].slice(0, 32),
+      name: post ? (post.characters[0] ? titleCase(post.characters[0]) : "Booru tags") : text.split(/[,.]/)[0].slice(0, 32),
       tags: tags ? parseTags(text).map((x) => x.t) : [],
       prose: tags ? "" : text
     });
     done();
     toast("Filed as snippet");
     go("snippets");
-  } else if (as === "character") {
-    const g = item.groups;
-    const name = g.character[0] || "New cast member";
-    const c = {
-      id: uid("chr"), name: titleCase(name.replace(/\s*\(.*\)$/, "")), series: titleCase(g.copyright[0] || "Original"),
-      trigger: g.character[0] || "", lora: null, appearance: g.general.slice(0, 16), prose: "",
-      outfits: {}, notes: item.url ? "From " + item.url : ""
-    };
-    db.characters.unshift(c);
-    done();
-    toast("Added to cast");
-    go("cast/" + c.id);
   }
+}
+
+// ---------- Danbooru import sheet ----------
+const postOf = (item) => item.post || postFromGroups(item);
+const normTag = (t) => String(t || "").toLowerCase().replace(/_/g, " ").trim();
+const castByTrigger = (tag) => db.characters.find((c) => c.trigger && normTag(c.trigger) === normTag(tag));
+const BUCKETS = ["appearance", "outfit", "skip"];
+
+// Character looks are cached for a week, so reopening a sheet doesn't hit Danbooru.
+let lookCache = null;
+async function looksFor(tags) {
+  if (!lookCache) lookCache = (hasChrome && (await chrome.storage.local.get("lookCache")).lookCache) || {};
+  const out = {}, failed = [];
+  await Promise.all(tags.map(async (t) => {
+    try { out[t] = await fetchLook(t, lookCache); }
+    catch { out[t] = null; failed.push(t); }
+  }));
+  if (hasChrome) chrome.storage.local.set({ lookCache }).catch(() => {});
+  return { looks: out, failed };
+}
+
+async function openSheet(item) {
+  const post = postOf(item);
+  const sheet = { itemId: item.id, post, drafts: null, failed: [], snippet: false };
+  ui.sheet = sheet;
+  const { looks, failed } = await looksFor(post.characters);
+  if (ui.sheet !== sheet) return; // the user moved on
+  sheet.failed = failed;
+  sheet.drafts = post.characters.map((tag) => {
+    const d = draftCharacter(tag, post, looks);
+    const existing = castByTrigger(tag);
+    d.include = !item.focus || normTag(item.focus) === normTag(tag);
+    d.mode = existing ? "outfit" : "new";
+    d.targetId = existing ? existing.id : null;
+    d.outfitName = existing ? `post ${post.id || ""}`.trim() : "default";
+    return d;
+  });
+  if (ui.importId === item.id) drawImport();
+}
+
+function sheetDraft(d, i) {
+  const target = d.targetId && charById(d.targetId);
+  const next = (b) => BUCKETS[(BUCKETS.indexOf(b) + 1) % 3];
+  const chips = (bucket) => d.buckets.map((x, j) => x.b !== bucket ? "" :
+    `<button class="chip bucket b-${bucket}" data-act="sheet-cycle" data-d="${i}" data-j="${j}" title="Move to ${next(bucket)}">${esc(x.t)}${x.f != null ? `<span class="w">${Math.round(x.f * 100)}%</span>` : ""}</button>`).join("");
+  const count = (bucket) => d.buckets.filter((x) => x.b === bucket).length;
+  const source = d.postCount ? `look from ${d.postCount.toLocaleString()} ${d.soloLook ? "solo " : ""}posts` : "sorted from this post only";
+  return `<article class="tk${i % 2 ? " ink" : ""}${d.include ? "" : " is-muted"}" style="--stub:0px;padding-bottom:14px">
+    <div class="tk-bg"><span class="tk-mark">${esc(initials(d.name))}</span></div>
+    <div class="tk-head"><label class="check" style="margin:0"><input type="checkbox" data-sheet="include" data-d="${i}" ${d.include ? "checked" : ""} aria-label="Import ${esc(d.name)}"> <span class="tag">${esc(d.series)}</span></label><span class="kv">${esc(source)}</span></div>
+    <input class="title-input sheet-name" data-sheet="name" data-d="${i}" value="${esc(d.name)}" aria-label="Name" spellcheck="false">
+    <p class="kv" style="margin-top:4px">trigger <b>${esc(d.tag)}</b></p>
+    ${target ? `<div class="sheet-match"><span>Already in your cast as <b>${esc(target.name)}</b></span>
+      <div class="seg" role="group" aria-label="What to do">${[["outfit", "Add as outfit"], ["new", "New card"]].map(([v, l]) =>
+        `<button data-act="sheet-mode" data-d="${i}" data-v="${v}" aria-pressed="${d.mode === v}">${l}</button>`).join("")}</div></div>` : ""}
+    <div class="group-label">Appearance · ${count("appearance")}</div><div class="chips">${chips("appearance") || '<span class="hint">None yet</span>'}</div>
+    <div class="group-label">Outfit · ${count("outfit")}</div><div class="chips">${chips("outfit") || '<span class="hint">None yet</span>'}</div>
+    <label class="sheet-outfit">Outfit name<input data-sheet="outfit" data-d="${i}" value="${esc(d.outfitName)}" spellcheck="false"></label>
+    <div class="group-label">Skip · ${count("skip")}</div><div class="chips">${chips("skip")}</div>
+  </article>`;
+}
+
+function drawImport() {
+  const item = db.inbox.find((i) => i.id === ui.importId);
+  if (!ui.sheet || ui.sheet.itemId !== item.id) openSheet(item);
+  const sheet = ui.sheet;
+  const post = sheet.post;
+  const picked = sheet.drafts ? sheet.drafts.filter((d) => d.include).length : 0;
+  const head = `
+    <div class="backbar"><a class="link" href="#inbox">← Inbox</a>${post.url ? `<a class="link" href="${esc(post.url)}" target="_blank" rel="noopener">Open post</a>` : ""}</div>
+    <article class="tk wide" style="--stubw:96px">
+      <div class="tk-bg"></div>
+      <div class="tk-main">
+        <div class="row"><span class="tag">${post.id ? "Danbooru #" + post.id : "Booru post"}</span><span class="slip-src">${esc(post.artists.join(", "))}</span></div>
+        <h3 class="tk-title" style="font-size:22px">${esc(post.characters.map((c) => titleCase(c.replace(/\s*\(.*\)$/, ""))).join(" · ") || "No characters")}</h3>
+        <p class="kv" style="margin-top:6px">${esc(post.copyrights.map(titleCase).join(", "))}</p>
+      </div>
+      <div class="tk-tear-v"></div>
+      <div class="tk-stub-v">${post.preview ? `<img class="sheet-thumb" src="${esc(post.preview)}" alt="">` : ""}<div class="barcode-wrap">${barcode(item.id, 70)}</div></div>
+    </article>`;
+  if (!post.characters.length) {
+    view.innerHTML = head + `<div class="empty"><h3>No <span class="holo-text">characters</span></h3><p>This post has no character tags. File its tags as a snippet from the inbox instead.</p></div>`;
+    return;
+  }
+  if (!sheet.drafts) {
+    view.innerHTML = head + `<div class="sec">Reading Danbooru</div>${post.characters.map((c) =>
+      `<p class="hint sheet-wait">Learning ${esc(titleCase(c.replace(/\s*\(.*\)$/, "")))}'s usual look from their posts…</p>`).join("")}`;
+    return;
+  }
+  view.innerHTML = head + `
+    <p class="hint" style="margin-top:12px">Click a tag to move it: appearance → outfit → skip. Percentages show how often the tag appears on the character's posts.</p>
+    ${sheet.failed.length ? `<p class="hint sheet-warn">Couldn't reach Danbooru for ${esc(sheet.failed.map(titleCase).join(", "))}, so those tags come from this post only.</p>` : ""}
+    <div class="sec">Characters<span class="aside">${picked} of ${sheet.drafts.length} selected</span></div>
+    <div class="stack" style="gap:18px">${sheet.drafts.map(sheetDraft).join("")}</div>
+    <label class="check" style="margin-top:16px"><input type="checkbox" data-sheet="snippet" ${sheet.snippet ? "checked" : ""}> Also save the scene tags as a snippet</label>
+    <div class="actions"><button class="btn" data-act="sheet-file">${picked ? `File ${picked} to cast` : "Pick a character"} <i aria-hidden="true">→</i></button></div>`;
+}
+
+function fileSheet() {
+  const sheet = ui.sheet, post = sheet.post;
+  const chosen = sheet.drafts.filter((d) => d.include);
+  if (!chosen.length) return toast("Pick at least one character");
+  const ids = [];
+  for (const d of chosen) {
+    const appearance = d.buckets.filter((x) => x.b === "appearance").map((x) => x.t);
+    const outfit = d.buckets.filter((x) => x.b === "outfit").map((x) => x.t);
+    const outfitName = (d.outfitName || "outfit").trim().toLowerCase();
+    const target = d.mode === "outfit" && d.targetId && charById(d.targetId);
+    if (target) {
+      for (const t of appearance) if (!target.appearance.some((a) => normTag(a) === normTag(t))) target.appearance.push(t);
+      if (outfit.length) {
+        let name = outfitName, n = 2;
+        while (target.outfits[name]) name = `${outfitName} ${n++}`;
+        target.outfits[name] = { tags: outfit, prose: "" };
+      }
+      if (!target.image && post.preview) target.image = post.preview;
+      ids.push(target.id);
+    } else {
+      const c = {
+        id: uid("chr"), name: d.name.trim() || titleCase(d.tag), series: d.series, trigger: d.tag, lora: null,
+        appearance, prose: "", outfits: outfit.length ? { [outfitName]: { tags: outfit, prose: "" } } : {},
+        notes: post.url ? "From " + post.url : "", image: post.preview || null
+      };
+      db.characters.unshift(c);
+      ids.push(c.id);
+    }
+  }
+  if (sheet.snippet) {
+    const scene = sceneTags(post);
+    if (scene.length) db.snippets.unshift({ id: uid("sn"), cat: "Scenes", name: post.id ? `Danbooru #${post.id}` : "Booru scene", tags: scene, prose: "" });
+  }
+  db.inbox = db.inbox.filter((i) => i.id !== sheet.itemId);
+  ui.sheet = null;
+  persist();
+  toast(ids.length === 1 ? "Added to cast" : `${ids.length} characters added to cast`);
+  go("cast/" + ids[0]);
 }
 
 async function makeThumb(file, max = 480) {
@@ -606,6 +739,7 @@ function castTicket(c, i) {
   return `<article class="tk${i % 2 ? " ink" : ""}" id="c-${c.id}" style="--stub:60px">
     <div class="tk-bg"><span class="tk-mark">${esc(initials(c.name))}</span></div>
     <div class="tk-head"><span class="tag">${esc(c.series)}</span>${c.trigger ? `<span class="num">trigger <b>${esc(c.trigger)}</b></span>` : ""}</div>
+    ${c.image ? `<img class="cast-ref" src="${esc(c.image)}" alt="">` : ""}
     <h3 class="tk-title">${esc(c.name)}</h3>
     ${detail}
     <div class="group-label">Start a recipe</div>
@@ -826,6 +960,13 @@ document.addEventListener("click", async (e) => {
       break;
     }
     case "file": return fileItem(el.dataset.id, el.dataset.as);
+    case "sheet-cycle": {
+      const x = ui.sheet.drafts[el.dataset.d].buckets[el.dataset.j];
+      x.b = BUCKETS[(BUCKETS.indexOf(x.b) + 1) % 3];
+      const y = window.scrollY; drawImport(); window.scrollTo(0, y); break;
+    }
+    case "sheet-mode": ui.sheet.drafts[el.dataset.d].mode = el.dataset.v; drawImport(); break;
+    case "sheet-file": return fileSheet();
     case "discard": db.inbox = db.inbox.filter((x) => x.id !== el.dataset.id); persist(); draw(); toast("Discarded"); break;
     case "filter": ui.filter = el.dataset.f; draw(); break;
     case "new-recipe": { const n = newRecipe(); db.recipes.unshift(n); persist(); go("recipe/" + n.id); break; }
@@ -952,6 +1093,8 @@ document.addEventListener("change", async (e) => {
     return draw();
   }
   if (t.dataset.setting) { db.settings[t.dataset.setting] = t.checked; return persist(); }
+  if (t.dataset.sheet === "include") { ui.sheet.drafts[t.dataset.d].include = t.checked; const y = window.scrollY; drawImport(); return window.scrollTo(0, y); }
+  if (t.dataset.sheet === "snippet") { ui.sheet.snippet = t.checked; return; }
   if (t.dataset.pf) {
     const p = db.profiles[t.dataset.p];
     // Text fields save on input; only checkboxes change the editor's layout.
@@ -987,6 +1130,8 @@ document.addEventListener("input", (e) => {
   const t = e.target;
   if (t.id === "q") { ui.q = t.value; return draw(); }
   const r = ui.recipeId && recipeById(ui.recipeId);
+  if (t.dataset.sheet === "name") { ui.sheet.drafts[t.dataset.d].name = t.value; return; }
+  if (t.dataset.sheet === "outfit") { ui.sheet.drafts[t.dataset.d].outfitName = t.value; return; }
   if (t.id === "title") { r.title = t.value; return persist(); }
   if (t.id === "neg") { r.negative = t.value; persist(); return drawOutput(r); }
   if (t.classList.contains("prose") && t.dataset.i != null) { r.blocks[t.dataset.i].prose = t.value; persist(); return drawOutput(r); }
@@ -1081,7 +1226,10 @@ async function drainCaptures() {
   for (const c of captures) db.inbox.unshift(c);
   await chrome.storage.local.set({ captures: [] });
   persist();
-  if (ui.tab === "inbox" && !ui.recipeId) draw();
+  // The Danbooru button asks for its post to open straight in the import sheet.
+  const opener = captures.filter((c) => c.openSheet).pop();
+  if (opener) return go("import/" + opener.id);
+  if (ui.tab === "inbox" && !ui.recipeId && !ui.importId) draw();
   else $("#count-inbox").textContent = db.inbox.length;
   toast(captures.length === 1 ? "New capture in inbox" : captures.length + " new captures");
 }

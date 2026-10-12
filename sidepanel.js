@@ -1,4 +1,4 @@
-import { DEFAULT_PROFILES, STOCKS, huesOf, BLOCK_TYPES, render, draftProse, estimateClipTokens, lint, toA1111, looksLikeTags, parseTags } from "./lib/render.js";
+import { DEFAULT_PROFILES, STOCKS, huesOf, BLOCK_TYPES, render, draftProse, loraBase, estimateClipTokens, lint, toA1111, looksLikeTags, parseTags } from "./lib/render.js";
 import { DEFAULT_TEMPLATES, SLOT_HELP, proseFromTags } from "./lib/prose.js";
 import { readRecipeFromFile, parseComfy } from "./lib/pngmeta.js";
 import { SEED } from "./lib/seed.js";
@@ -6,7 +6,7 @@ import { loadTagList, importTagCsv, clearTagList, tagListInfo, searchLocal, libr
 import { attachAutocomplete } from "./lib/autocomplete.js";
 import { tagDiff, wordDiff, settingsDiff, changed } from "./lib/diff.js";
 import { fetchLook, draftCharacter, postFromGroups, sceneTags } from "./lib/booru.js";
-import { DEFAULT_COMFY, normalizeBase, originPattern, ping, findTab, queueGraph, applyInTab, bridgeCall } from "./lib/comfy.js";
+import { DEFAULT_COMFY, normalizeBase, originPattern, ping, findTab, queueGraph, applyInTab, bridgeCall, fetchLoras } from "./lib/comfy.js";
 
 const hasChrome = typeof chrome !== "undefined" && chrome.storage && chrome.storage.local;
 const $ = (s, el = document) => el.querySelector(s);
@@ -578,7 +578,6 @@ function drawRecipe() {
   const r = recipeById(ui.recipeId);
   const p = profileOf(r);
   const s = r.settings;
-  const loras = (s.loras || []).map((l) => `${l.name}:${l.w}`).join(", ");
   const field = (k, label, val, cls = "") => `<label class="${cls}">${label}<input data-s="${k}" value="${esc(val ?? "")}" spellcheck="false"></label>`;
   view.innerHTML = `
     <div class="backbar">
@@ -621,7 +620,7 @@ function drawRecipe() {
       <div class="tk-head"><span class="tag">Settings</span><span class="kv">${r.comfy ? "ComfyUI graph attached" : "No ComfyUI graph"}</span></div>
       <div class="settings-grid">
         ${field("model", "Model", s.model, "full")}
-        ${field("loras", "LoRAs (name:weight, …)", loras, "full")}
+        <div class="full" id="lora-edit">${loraRows(r)}</div>
         ${field("sampler", "Sampler", s.sampler)}${field("scheduler", "Scheduler", s.scheduler)}
         ${field("steps", "Steps", s.steps)}${field("cfg", "CFG", s.cfg)}
         ${field("seed", "Seed", s.seed)}${field("size", "Size", s.width ? s.width + "x" + s.height : "")}
@@ -634,6 +633,46 @@ function drawRecipe() {
 
 const drawVersions = (r) => { const el = $("#versions"); if (el) el.innerHTML = versionsHtml(r); };
 const refresh = (r) => { persist(); drawBlocks(r); drawOutput(r); if (ui.diffId) drawVersions(r); };
+
+// ---------- LoRAs ----------
+function addLora(r, name, w) {
+  name = String(name || "").trim();
+  if (!name) return;
+  const weight = w === undefined || w === "" ? 1 : Number(w);
+  r.settings.loras = r.settings.loras || [];
+  const hit = r.settings.loras.find((l) => loraBase(l.name) === loraBase(name));
+  if (hit) hit.w = weight; else r.settings.loras.push({ name, w: weight });
+  toast(`LoRA ${loraBase(name)} at ${weight}`);
+}
+
+function loraRows(r) {
+  const installed = db.settings.loraList && db.settings.loraList.names;
+  const have = installed && new Set(installed.map(loraBase));
+  const rows = (r.settings.loras || []).map((l, j) => {
+    const missing = have && !have.has(loraBase(l.name));
+    return `<div class="lora-row${missing ? " missing" : ""}">
+      <span class="lora-name" title="${esc(l.name)}${missing ? " (not in ComfyUI's loras folder)" : ""}">${missing ? "⚠ " : ""}${esc(loraBase(l.name))}</span>
+      <input type="range" min="0" max="2" step="0.05" value="${l.w}" data-lora-w="${j}" aria-label="Weight for ${esc(loraBase(l.name))}">
+      <input class="lora-num" type="number" min="-2" max="3" step="0.05" value="${l.w}" data-lora-w="${j}" aria-label="Weight">
+      <button data-act="lora-del" data-j="${j}" aria-label="Remove ${esc(loraBase(l.name))}">×</button>
+    </div>`;
+  }).join("");
+  return `<span class="lora-label">LoRAs</span>${rows}<input class="lora-add" placeholder="${installed ? `+ LoRA (${installed.length} installed)` : "+ LoRA name"}" aria-label="Add a LoRA" spellcheck="false">`;
+}
+
+// LoRA names from ComfyUI, plus any already used in the library.
+function loraSuggestions(q, plain) {
+  const needle = q.replace(/^<(lora:)?/i, "").toLowerCase();
+  const names = new Map();
+  for (const n of (db.settings.loraList && db.settings.loraList.names) || []) names.set(loraBase(n), n);
+  for (const r of db.recipes) for (const l of r.settings.loras || []) if (!names.has(loraBase(l.name))) names.set(loraBase(l.name), l.name);
+  for (const c of db.characters) if (c.lora && !names.has(loraBase(c.lora.name))) names.set(loraBase(c.lora.name), c.lora.name);
+  return [...names].filter(([b]) => !needle || b.includes(needle)).sort(([a], [b]) => (b.startsWith(needle) - a.startsWith(needle)) || a.localeCompare(b)).slice(0, 8)
+    .map(([b, full]) => {
+      const folder = String(full).split(/[\\/]/).slice(0, -1).join("/");
+      return { name: b, insert: plain ? full : `<lora:${full}:1>`, cat: "lora", count: folder, source: "lora" };
+    });
+}
 
 // ---------- Results (generation history) ----------
 // Prompts are compared loosely: case, spacing, escaped brackets and trailing
@@ -774,7 +813,7 @@ async function withComfyTab(payload, okLabel) {
   if (!tab) return toast("Open ComfyUI in a browser tab first");
   try {
     const res = await applyInTab(tab.id, payload);
-    toast(res && res.ok ? `${okLabel}: ${res.applied.join(", ")}` : (res && res.error) || "ComfyUI didn't respond");
+    toast(res && res.ok ? `${okLabel}: ${res.applied.join(", ")}${res.warnings && res.warnings.length ? ". " + res.warnings.join("; ") : ""}` : (res && res.error) || "ComfyUI didn't respond");
   } catch { toast("Couldn't reach the ComfyUI tab. Check the address in Settings."); }
 }
 
@@ -858,11 +897,24 @@ async function heartbeat() {
   beating = true;
   try { await beat(); } finally { beating = false; }
 }
+// The installed LoRA list feeds autocomplete and the missing-LoRA check.
+async function refreshLoras(tab, announce) {
+  const names = await fetchLoras(comfyBase(), tab ? tab.id : null);
+  if (!names) { if (announce) toast("Couldn't read the LoRA list. Open ComfyUI in a tab and try again."); return false; }
+  db.settings.loraList = { at: Date.now(), names };
+  persist();
+  if (announce) toast(`Found ${names.length} LoRAs`);
+  if (ui.recipeId) { drawOutput(recipeById(ui.recipeId)); const el = $("#lora-edit"); if (el) el.innerHTML = loraRows(recipeById(ui.recipeId)); }
+  return true;
+}
+
 async function beat() {
   const base = comfyBase();
   const [live, tab] = await Promise.all([ping(base), findTab(base)]);
   const hadBridge = ui.bridge;
   if (tab) await syncBridge(tab).catch(() => {}); else ui.bridge = null;
+  const list = db.settings.loraList;
+  if ((tab || live) && (!list || Date.now() - list.at > 10 * 60e3)) refreshLoras(tab).catch(() => {});
   const changed = live !== ui.comfyLive || !!tab !== !!ui.comfyTab || hadBridge !== ui.bridge;
   ui.comfyLive = live; ui.comfyTab = tab;
   const el = $("#comfy-status");
@@ -1033,6 +1085,7 @@ function drawSettings() {
       <div class="row" style="margin-top:10px"><button class="btn ghost sm" data-act="comfy-save">Save address</button></div>
       <label class="check" style="margin-top:10px"><input type="checkbox" data-setting="autoResults" ${db.settings.autoResults ? "checked" : ""}> File captures made from a recipe straight into its results</label>
       <p class="hint" style="margin-top:8px">Loading into a workflow needs ComfyUI open in a browser tab. The desktop app runs on port 8000 and only supports queueing saved graphs.</p>
+      <p class="kv" style="margin-top:8px">${db.settings.loraList ? `${db.settings.loraList.names.length} LoRAs found ${ago(db.settings.loraList.at)}` : "LoRA list not read yet"} · <button class="link" data-act="lora-refresh">Refresh</button></p>
       <p class="kv" style="margin-top:8px">${ui.bridge ? `ComfyUI-Prompto ${esc(ui.bridge)} is installed: your library syncs to its sidebar and captures from ComfyUI land in the inbox.`
         : "Install ComfyUI-Prompto in ComfyUI for a Prompto sidebar there, right-click “Save to Prompto”, and auto-capture of saved images."}</p>
     </section>
@@ -1101,7 +1154,8 @@ const SEED_IDS = new Set([...SEED.inbox, ...SEED.recipes, ...SEED.characters, ..
 // ---------- Autocomplete ----------
 let tagIndex = null, tagIndexRev = -1;
 attachAutocomplete({
-  suggestLocal(q) {
+  suggestLocal(q, input) {
+    if (input && (input.classList.contains("lora-add") || q.startsWith("<"))) return loraSuggestions(q, input.classList.contains("lora-add"));
     if (tagIndexRev !== ui.rev) { tagIndex = libraryTags(db); tagIndexRev = ui.rev; }
     const yours = searchLibrary(tagIndex, q, 3);
     const seen = new Set(yours.map((x) => x.name.toLowerCase()));
@@ -1197,6 +1251,7 @@ document.addEventListener("click", async (e) => {
     }
     case "comfy-node": { const pos = render(r, profileOf(r), db).positive; noteSend(r, pos, "sent to a node"); drawVersions(r); return withComfyTab({ mode: "selected", text: pos, append: false }, "Sent"); }
     case "send-comfy": noteSend(r, render(r, profileOf(r), db).positive, "queued"); drawVersions(r); return queueSaved(r);
+    case "lora-del": r.settings.loras.splice(Number(el.dataset.j), 1); persist(); $("#lora-edit").innerHTML = loraRows(r); drawOutput(r); break;
     case "ver-save": toast(saveVersion(r, "saved") ? "Version saved" : "Nothing changed since the last version"); persist(); drawVersions(r); break;
     case "ver-diff": ui.diffId = ui.diffId === el.dataset.v ? null : el.dataset.v; drawVersions(r); break;
     case "ver-restore": {
@@ -1296,6 +1351,7 @@ document.addEventListener("click", async (e) => {
       db.settings.comfyUrl = base; persist(); toast("Saved " + base); heartbeat(); draw(); break;
     }
     case "export": exportLibrary(); break;
+    case "lora-refresh": refreshLoras(ui.comfyTab, true).then(() => draw()); break;
     case "import-cancel": ui.pendingImport = null; draw(); break;
     case "import-merge": {
       const added = mergeLibrary(ui.pendingImport.data);
@@ -1369,6 +1425,13 @@ document.addEventListener("input", (e) => {
   if (t.dataset.sheet === "outfit") { ui.sheet.drafts[t.dataset.d].outfitName = t.value; return; }
   if (t.id === "title") { r.title = t.value; return persist(); }
   if (t.id === "neg") { r.negative = t.value; persist(); return drawOutput(r); }
+  if (t.dataset.loraW != null) {
+    const l = r.settings.loras[t.dataset.loraW];
+    l.w = Math.round(Number(t.value) * 100) / 100;
+    const row = t.closest(".lora-row");
+    row.querySelector(t.type === "range" ? ".lora-num" : "input[type=range]").value = l.w;
+    persist(); return drawOutput(r);
+  }
   if (t.classList.contains("prose") && t.dataset.i != null) { r.blocks[t.dataset.i].prose = t.value; persist(); return drawOutput(r); }
   if (t.dataset.pf && t.type !== "checkbox") { db.profiles[t.dataset.p][t.dataset.pf] = t.value; return persist(); }
   if (t.dataset.tpl) {
@@ -1390,13 +1453,27 @@ document.addEventListener("keydown", (e) => {
   const t = e.target;
   if (e.key === "Escape" && ui.lightbox) { ui.lightbox = null; return drawLightbox(); }
   if (t.id === "cap-text" && e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); return $('[data-act="capture"]').click(); }
+  if (t.classList.contains("lora-add") && e.key === "Enter") {
+    e.preventDefault();
+    const v = t.value.trim().replace(/^<lora:|>$/g, "");
+    if (!v) return;
+    const [name, w] = v.split(/:(?=-?[\d.]+$)/);
+    const r = recipeById(ui.recipeId);
+    addLora(r, name, w);
+    persist(); $("#lora-edit").innerHTML = loraRows(r); drawOutput(r);
+    $(".lora-add")?.focus();
+    return;
+  }
   if (t.classList.contains("chip-add") && e.key === "Enter") {
     e.preventDefault();
     const v = t.value.trim();
     if (!v) return;
     if (t.dataset.i != null) {
       const r = recipeById(ui.recipeId);
-      r.blocks[t.dataset.i].tags.push(...parseTags(v));
+      // <lora:name:weight> typed into a tag field goes to the recipe's LoRAs.
+      const rest = v.replace(/<lora:([^:>]+)(?::(-?[\d.]+))?>?/g, (_, name, w) => { addLora(r, name, w); return ""; });
+      r.blocks[t.dataset.i].tags.push(...parseTags(rest));
+      const le = $("#lora-edit"); if (le) le.innerHTML = loraRows(r);
       const sel = `.chip-add[data-i="${t.dataset.i}"]`;
       refresh(r); $(sel)?.focus();
     } else if (t.dataset.path) {

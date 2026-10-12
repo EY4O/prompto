@@ -23,7 +23,7 @@ A Chrome side-panel extension for people who make images with Stable Diffusion, 
 - 🎭 **Characters from Danbooru** — a **+ Prompto** button on Danbooru posts learns a character's usual look from their solo posts and sorts the tags into appearance and outfit.
 - ⌨️ **Tag autocomplete** — suggestions from your own library, an imported Danbooru tag list (with post counts and aliases), and live Danbooru lookups.
 - 🎚️ **Prompt tools** — scroll over a tag to weight it, a CLIP token counter, and a checker for duplicates, contradictions and over-weighted tags.
-- 🔗 **ComfyUI and Forge** — load a recipe straight into the open ComfyUI workflow, or copy it in Forge's format and fill in every setting with one click.
+- 🔗 **ComfyUI and Forge** — load a recipe, LoRAs included, straight into the open ComfyUI workflow, or copy it in Forge's format and fill in every setting with one click.
 - 💾 **Yours to keep** — everything stays in your browser, with JSON export and import. No account, and no AI.
 
 ## 📸 Screenshots
@@ -154,6 +154,14 @@ A version is saved each time a recipe leaves Prompto (**Copy prompt**, **Copy fo
 </details>
 
 <details>
+<summary><b>🧩 LoRAs</b></summary>
+
+- Each recipe lists its LoRAs in **Settings** with a weight slider. Add one from the **+ LoRA** field, or type `<` in any tag field to search LoRAs; picking one adds it to the recipe instead of the tags. `<lora:name:0.8>` typed or pasted into a tag field works the same way.
+- Prompto reads ComfyUI's installed LoRAs (every 10 minutes while ComfyUI is reachable, or **Settings → ComfyUI → Refresh**). Suggestions show each LoRA's folder, and LoRAs that aren't installed get a ⚠ and a warning in the checker.
+- **Copy for Forge** writes LoRAs as `<lora:name:weight>` in the prompt.
+</details>
+
+<details>
 <summary><b>⌨️ Tag autocomplete</b></summary>
 
 Every **+ tags** field suggests tags from three places, in this order:
@@ -169,7 +177,8 @@ Underscores become spaces, except in emoticons such as `^_^`.
 <summary><b>🔗 Connecting to ComfyUI</b></summary>
 
 - Prompto checks the ComfyUI address in **Settings** every few seconds (default `http://127.0.0.1:8188`). The header shows **offline**, **live**, **tab open** or **linked**.
-- **Load into workflow** and **Selected node** edit the workflow in your open ComfyUI tab. Settings go to the first sampler, so a hires-fix pass keeps its own steps, and dropdown values are only set when ComfyUI offers them. LoRAs aren't applied yet.
+- **Load into workflow** and **Selected node** edit the workflow in your open ComfyUI tab. Settings go to the first sampler, so a hires-fix pass keeps its own steps, and dropdown values are only set when ComfyUI offers them.
+- **LoRAs** fill the workflow's existing LoRA loader nodes in order, matched by file name even across folders, with the recipe's weight on both model and CLIP. Loaders the recipe doesn't use, or whose LoRA isn't installed, are bypassed, and Prompto says when the workflow needs more loader nodes. It never adds nodes itself.
 - With **ComfyUI-Prompto** installed, Prompto works through its bridge instead of ComfyUI's internals, syncs your library to the ComfyUI sidebar, and collects captures from ComfyUI.
 - Recent ComfyUI versions turn away requests that come straight from extensions. That's why Prompto goes through the open tab. **Queue saved graph** calls the API directly and may need ComfyUI started with `--enable-cors-header`.
 - The ComfyUI desktop app isn't a browser tab, so only **Queue saved graph** works with it.
@@ -193,7 +202,6 @@ Running from source, project layout and releasing are described in **[docs/DEVEL
 ## 🗺️ Roadmap
 
 - An icon and a Chrome Web Store listing.
-- Apply LoRAs when loading a recipe into ComfyUI.
 - Bundle the fonts so the panel looks right offline.
 
 ## 🤝 Contributing

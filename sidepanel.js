@@ -4,6 +4,7 @@ import { readRecipeFromFile, parseComfy } from "./lib/pngmeta.js";
 import { SEED } from "./lib/seed.js";
 import { loadTagList, importTagCsv, clearTagList, tagListInfo, searchLocal, libraryTags, searchLibrary, searchDanbooru } from "./lib/tags.js";
 import { attachAutocomplete } from "./lib/autocomplete.js";
+import { tagDiff, wordDiff, settingsDiff, changed } from "./lib/diff.js";
 import { fetchLook, draftCharacter, postFromGroups, sceneTags } from "./lib/booru.js";
 import { DEFAULT_COMFY, normalizeBase, originPattern, ping, findTab, queueGraph, applyInTab, bridgeCall } from "./lib/comfy.js";
 
@@ -27,7 +28,7 @@ const store = {
 
 let db;
 const ui = {
-  tab: "inbox", recipeId: null, openChar: null, openProfile: null, q: "", filter: "all", sort: "new", lightbox: null,
+  tab: "inbox", recipeId: null, openChar: null, openProfile: null, q: "", filter: "all", sort: "new", lightbox: null, diffId: null,
   importId: null, sheet: null,
   comfyLive: false, comfyTab: null, bridge: null, syncedRev: -1, focus: null, pendingImport: null, rev: 0
 };
@@ -40,7 +41,7 @@ function migrate(d) {
   if (!d.profiles || !Object.keys(d.profiles).length) d.profiles = structuredClone(DEFAULT_PROFILES);
   d.settings = { comfyUrl: DEFAULT_COMFY, onlineTags: true, proseTemplates: {}, autoResults: true, ...(d.settings || {}) };
   if (!Array.isArray(d.recentSends)) d.recentSends = [];
-  for (const r of d.recipes) if (!Array.isArray(r.runs)) r.runs = [];
+  for (const r of d.recipes) { if (!Array.isArray(r.runs)) r.runs = []; if (!Array.isArray(r.versions)) r.versions = []; }
   for (const c of d.characters) { c.appearance = c.appearance || []; c.outfits = c.outfits || {}; }
   d.nextNo = Math.max(d.nextNo || 1, ...d.recipes.map((r) => (r.no || 0) + 1));
   d.version = 2;
@@ -136,7 +137,7 @@ $("#theme-btn").addEventListener("click", () => {
 const TABS = ["inbox", "recipes", "characters", "snippets", "settings"];
 function route() {
   const [tab, id] = location.hash.replace(/^#/, "").split("/");
-  ui.recipeId = null; ui.importId = null; ui.lightbox = null; drawLightbox();
+  ui.recipeId = null; ui.importId = null; ui.lightbox = null; ui.diffId = null; drawLightbox();
   if (tab === "recipe" && id && recipeById(id)) { ui.tab = "recipes"; ui.recipeId = id; }
   else if (tab === "import" && id && db.inbox.some((i) => i.id === id && i.kind === "booru")) { ui.tab = "inbox"; ui.importId = id; }
   else if (tab === "cast") { ui.tab = "characters"; ui.openChar = id || ui.openChar; }
@@ -613,6 +614,7 @@ function drawRecipe() {
 
     <div id="output"></div>
     <div id="results">${resultsHtml(r)}</div>
+    <div id="versions">${versionsHtml(r)}</div>
 
     <section class="tk settings" style="--stub:0px">
       <div class="tk-bg"></div>
@@ -630,7 +632,8 @@ function drawRecipe() {
   drawOutput(r);
 }
 
-const refresh = (r) => { persist(); drawBlocks(r); drawOutput(r); };
+const drawVersions = (r) => { const el = $("#versions"); if (el) el.innerHTML = versionsHtml(r); };
+const refresh = (r) => { persist(); drawBlocks(r); drawOutput(r); if (ui.diffId) drawVersions(r); };
 
 // ---------- Results (generation history) ----------
 // Prompts are compared loosely: case, spacing, escaped brackets and trailing
@@ -638,9 +641,63 @@ const refresh = (r) => { persist(); drawBlocks(r); drawOutput(r); };
 const promptKey = (t) => String(t || "").replace(/\\([()])/g, "$1").toLowerCase().replace(/\s+/g, " ").replace(/[\s,.]+$/, "").trim();
 
 // Remember what was just sent out, so an image made from it finds its recipe.
-function noteSend(r, positive) {
+function noteSend(r, positive, reason = "sent") {
   db.recentSends = [{ recipeId: r.id, key: promptKey(positive), at: Date.now() }, ...db.recentSends.filter((x) => x.recipeId !== r.id)].slice(0, 20);
+  saveVersion(r, reason);
   persist();
+}
+
+// ---------- Versions ----------
+// A snapshot is taken whenever a recipe leaves Prompto (copied, loaded, queued)
+// and whenever you press Save version, unless nothing changed since the last one.
+const versionBody = (r) => JSON.stringify([r.profile, r.blocks, r.negative, r.settings]);
+
+function saveVersion(r, reason) {
+  r.versions = r.versions || [];
+  const body = versionBody(r);
+  if (r.versions[0] && r.versions[0].body === body) return false;
+  const p = profileOf(r);
+  const out = render(r, p, db);
+  r.versions.unshift({
+    id: uid("ver"), at: Date.now(), reason, body, profile: r.profile, profileLabel: p.label, format: p.format,
+    positive: out.positive, negative: out.negative, settings: structuredClone(r.settings), blocks: structuredClone(r.blocks), recipeNegative: r.negative
+  });
+  r.versions = r.versions.slice(0, 30);
+  return true;
+}
+
+function diffHtml(ops) {
+  return ops.map((o) => o.op === "same" ? esc(o.v) : `<span class="d-${o.op}">${esc(o.v)}</span>`).join("");
+}
+
+function versionsHtml(r) {
+  const vs = r.versions || [];
+  const p = profileOf(r);
+  const current = render(r, p, db);
+  const sel = vs.find((v) => v.id === ui.diffId);
+  let diff = "";
+  if (sel) {
+    const tags = p.format === "tags" && sel.format === "tags";
+    const join = (ops, sep) => ops.map((o) => o.op === "same" ? esc(o.v) : `<span class="d-${o.op}">${esc(o.v)}</span>`).join(sep);
+    const pos = tags ? join(tagDiff(sel.positive, current.positive), ", ") : diffHtml(wordDiff(sel.positive, current.positive));
+    const negOps = wordDiff(sel.negative || "", current.negative || "");
+    const sets = settingsDiff(sel.settings, r.settings);
+    const vNo = vs.length - vs.indexOf(sel);
+    diff = `<section class="tk diff" style="--stub:0px;padding-bottom:14px">
+      <div class="tk-bg"></div>
+      <div class="tk-head"><span class="tag">v${vNo} → now</span><span class="kv">${esc(sel.profileLabel)}${sel.profile !== r.profile ? " → " + esc(p.label) : ""}</span></div>
+      <div class="out-label"><span>Positive</span></div><div class="out-text">${pos || '<span class="hint">empty</span>'}</div>
+      ${changed(negOps) ? `<div class="out-label"><span>Negative</span></div><div class="out-text">${diffHtml(negOps)}</div>` : ""}
+      ${sets.length ? `<div class="out-label"><span>Settings</span></div><ul class="diff-sets">${sets.map(([k, a, b]) => `<li><span>${esc(k)}</span> <span class="d-del">${esc(a)}</span> → <span class="d-add">${esc(b)}</span></li>`).join("")}</ul>` : ""}
+      ${!changed(tagDiff(sel.positive, current.positive)) && !changed(negOps) && !sets.length ? `<p class="hint" style="margin-top:8px">No differences.</p>` : ""}
+    </section>`;
+  }
+  return `<div class="sec">Versions<span class="aside">${vs.length ? vs.length + " saved" : "none yet"} · <button class="link" data-act="ver-save">Save version</button></span></div>
+    ${vs.length ? `<ul class="versions">${vs.map((v, i) => `<li class="${v.id === ui.diffId ? "on" : ""}">
+        <b>v${vs.length - i}</b><span class="kv">${esc(v.reason)} · ${ago(v.at)}</span>
+        <span class="row" style="margin-left:auto"><button class="link" data-act="ver-diff" data-v="${v.id}">${v.id === ui.diffId ? "Hide" : "Compare"}</button><button class="link" data-act="ver-restore" data-v="${v.id}">Restore</button></span>
+      </li>`).join("")}</ul>${diff}`
+      : `<p class="hint">A version is saved each time you copy, load or queue this recipe, so you can see what changed between runs.</p>`}`;
 }
 
 function matchRecipe(positive) {
@@ -1100,7 +1157,7 @@ document.addEventListener("click", async (e) => {
     case "edit-profile": ui.openProfile = el.dataset.p; break;
     case "fav": r.fav = !r.fav; persist(); drawRecipe(); break;
     case "dup": {
-      const d = { ...structuredClone(r), id: uid("rec"), no: db.nextNo++, title: r.title + " copy", createdAt: Date.now() };
+      const d = { ...structuredClone(r), id: uid("rec"), no: db.nextNo++, title: r.title + " copy", createdAt: Date.now(), runs: [], versions: [], coverId: null };
       db.recipes.unshift(d); persist(); toast("Duplicated"); go("recipe/" + d.id); break;
     }
     case "del-recipe":
@@ -1130,16 +1187,27 @@ document.addEventListener("click", async (e) => {
       r.blocks.push({ type: $("#add-type").value, tags: [], prose: "" });
       refresh(r); $(`.chip-add[data-i="${r.blocks.length - 1}"]`)?.focus(); break;
     }
-    case "copy-pos": { const pos = render(r, profileOf(r), db).positive; noteSend(r, pos); copy(pos, "Prompt copied"); break; }
+    case "copy-pos": { const pos = render(r, profileOf(r), db).positive; noteSend(r, pos, "copied"); drawVersions(r); copy(pos, "Prompt copied"); break; }
     case "copy-neg": copy(render(r, profileOf(r), db).negative || "", "Negative copied"); break;
-    case "copy-a1111": noteSend(r, render(r, profileOf(r), db).positive); copy(toA1111(r, profileOf(r), db), "Copied. Paste it into Forge, then press ↙"); break;
+    case "copy-a1111": noteSend(r, render(r, profileOf(r), db).positive, "copied for Forge"); drawVersions(r); copy(toA1111(r, profileOf(r), db), "Copied. Paste it into Forge, then press ↙"); break;
     case "comfy-load": {
       const out = render(r, profileOf(r), db);
-      noteSend(r, out.positive);
+      noteSend(r, out.positive, "loaded into ComfyUI"); drawVersions(r);
       return withComfyTab({ mode: "recipe", positive: out.positive, negative: out.negative, settings: r.settings }, "Loaded");
     }
-    case "comfy-node": { const pos = render(r, profileOf(r), db).positive; noteSend(r, pos); return withComfyTab({ mode: "selected", text: pos, append: false }, "Sent"); }
-    case "send-comfy": noteSend(r, render(r, profileOf(r), db).positive); return queueSaved(r);
+    case "comfy-node": { const pos = render(r, profileOf(r), db).positive; noteSend(r, pos, "sent to a node"); drawVersions(r); return withComfyTab({ mode: "selected", text: pos, append: false }, "Sent"); }
+    case "send-comfy": noteSend(r, render(r, profileOf(r), db).positive, "queued"); drawVersions(r); return queueSaved(r);
+    case "ver-save": toast(saveVersion(r, "saved") ? "Version saved" : "Nothing changed since the last version"); persist(); drawVersions(r); break;
+    case "ver-diff": ui.diffId = ui.diffId === el.dataset.v ? null : el.dataset.v; drawVersions(r); break;
+    case "ver-restore": {
+      const v = r.versions.find((x) => x.id === el.dataset.v);
+      if (!armed(el, "Press again")) return;
+      saveVersion(r, "before restore");
+      r.profile = db.profiles[v.profile] ? v.profile : r.profile;
+      r.blocks = structuredClone(v.blocks); r.negative = v.recipeNegative || ""; r.settings = structuredClone(v.settings);
+      ui.diffId = null; persist(); drawRecipe();
+      toast(`Restored v${r.versions.length - r.versions.indexOf(v)}`); break;
+    }
     case "run-open": ui.lightbox = { recipeId: r.id, runId: el.dataset.run }; drawLightbox(); break;
     case "lb-close": ui.lightbox = null; drawLightbox(); break;
     case "run-step": {

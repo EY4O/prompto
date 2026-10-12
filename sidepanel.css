@@ -251,6 +251,7 @@ button.chip:hover, .chip.edit:hover { border-color: var(--line-2); }
 .slip-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
 .slip-actions .lbl { font-size: 10.5px; text-transform: uppercase; color: var(--fg-2); margin-right: 2px; }
 .slip-thumb { width: 100%; max-height: 140px; object-fit: cover; border-radius: 6px; margin-top: 8px; display: block; }
+.slip-thumb.card { object-position: top; } /* a share card's title is at its top */
 .group-label { font-size: 10px; text-transform: uppercase; color: var(--fg-2); margin: 8px 0 4px; }
 
 .empty { text-align: center; padding: 36px 12px; }

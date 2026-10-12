@@ -197,7 +197,7 @@ function slip(item) {
     label = "Prompto card";
     const d = item.data;
     const what = d.kind === "cast" ? `Cast · ${d.character.name}` : `Recipe · ${d.recipe.title}`;
-    body = `${item.thumb ? `<img class="slip-thumb" src="${esc(item.thumb)}" alt="">` : ""}<p class="slip-text">${esc(what)}</p>
+    body = `${item.thumb ? `<img class="slip-thumb card" src="${esc(item.thumb)}" alt="">` : ""}<p class="slip-text">${esc(what)}</p>
       ${d.kind === "recipe" && d.cast && d.cast.length ? `<p class="kv" style="margin-top:4px">with ${esc(d.cast.map((c) => c.name).join(", "))}</p>` : ""}`;
     files = [["card", "Import"]];
   } else if (item.kind === "image") {

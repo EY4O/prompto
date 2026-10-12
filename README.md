@@ -10,7 +10,7 @@
 
 A Chrome side-panel extension for people who make images with Stable Diffusion, Illustrious, Flux and Qwen. It's a home for the ideas you run into while browsing: tags from a Reddit thread, a character from Danbooru, the settings inside a PNG someone shared. Ideas land in an inbox, become reusable recipes, characters and snippets, and come out as the right prompt for whichever model you're using, as booru tags, natural language or both. It works without ComfyUI running, and connects to ComfyUI or Forge when you want it to. Open it from the toolbar icon or with **Alt+Shift+P**.
 
-![Prompto's recipe editor and its prompt output](docs/images/hero.png)
+![Prompto's recipe editor, its prompt output and rated results](docs/images/hero.png)
 
 ---
 
@@ -30,10 +30,10 @@ A Chrome side-panel extension for people who make images with Stable Diffusion, 
 
 | | |
 |---|---|
-| ![Inbox](docs/images/inbox.png) **Inbox** — captures wait here until you file them as recipes, snippets or cast | ![Danbooru import](docs/images/import.png) **Danbooru import** — each character's look, with how often each tag appears on their posts |
-| ![Cast](docs/images/cast.png) **Cast** — reusable characters with outfits, trigger words, LoRAs and reference images | ![Profiles](docs/images/profiles.png) **Profiles** — decide how each model's prompt is written: tags or prose, quality tags, negatives |
+| ![Inbox](docs/images/inbox.png) **Inbox** — captures from anywhere, including ComfyUI images and share cards, wait here until you file them | ![Danbooru import](docs/images/import.png) **Danbooru import** — each character's usual look, with how often each tag appears on their posts |
+| ![Cast](docs/images/cast.png) **Cast** — reusable characters with outfits, reference images and drafted prose | ![Versions and LoRAs](docs/images/versions.png) **Versions and LoRAs** — what changed since an earlier run, and the recipe's LoRAs with weights |
 
-<sub>Screenshots use sample data. The Danbooru post's artwork is hidden.</sub>
+<sub>Screenshots use sample data. Result and reference images are generated placeholders, and the Danbooru post's artwork is hidden.</sub>
 
 ---
 

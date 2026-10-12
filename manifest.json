@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Prompto",
+  "version": "0.2.0",
+  "description": "Capture, organize and remix Stable Diffusion prompts, image recipes and character tags.",
+  "minimum_chrome_version": "116",
+  "permissions": ["sidePanel", "storage", "contextMenus", "scripting", "activeTab", "unlimitedStorage"],
+  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*", "https://danbooru.donmai.us/*"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "background": { "service_worker": "background.js" },
+  "side_panel": { "default_path": "sidepanel.html" },
+  "action": { "default_title": "Open Prompto" },
+  "omnibox": { "keyword": "p" },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": { "default": "Alt+Shift+P" },
+      "description": "Open Prompto"
+    }
+  }
+}

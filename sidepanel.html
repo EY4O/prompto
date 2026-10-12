@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prompto</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@200..700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand" aria-label="Prompto">Prompt<span class="brand-o" aria-hidden="true"></span></div>
+    <div class="top-right">
+      <span class="live" id="comfy-status" data-state="off" title="Checks http://127.0.0.1:8188">ComfyUI · offline</span>
+      <button class="icon-btn" id="settings-btn" aria-label="Settings" aria-pressed="false">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+      </button>
+      <button class="icon-btn" id="theme-btn" aria-label="Switch theme">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs" aria-label="Sections">
+    <button data-tab="inbox"><span class="n">01</span>Inbox<b class="count" id="count-inbox"></b></button>
+    <button data-tab="recipes"><span class="n">02</span>Recipes</button>
+    <button data-tab="characters"><span class="n">03</span>Cast</button>
+    <button data-tab="snippets"><span class="n">04</span>Snippets</button>
+  </nav>
+
+  <div class="search">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg>
+    <input id="q" type="search" placeholder="silver hair, neon, katana…" aria-label="Search">
+  </div>
+
+  <main id="view"></main>
+
+  <div class="drop-veil" id="drop-veil" aria-hidden="true">
+    <div class="drop-card"><span>Drop to read</span><b>recipe</b><small>ComfyUI and A1111 PNGs</small></div>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>

@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/images/icon.png" width="112" alt="Prompto"></p>
+
 <h1 align="center">Prompto</h1>
 
 <p align="center"><b>Catch prompts, tags and characters wherever you find them, and turn them into prompts for any model.</b></p>
@@ -266,7 +268,7 @@ Running from source, project layout and releasing are described in **[docs/DEVEL
 
 ## 🗺️ Roadmap
 
-- An icon and a Chrome Web Store listing.
+- A Chrome Web Store listing.
 - Bundle the fonts so the panel looks right offline.
 
 ## 🤝 Contributing

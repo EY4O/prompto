@@ -21,6 +21,8 @@ lib/tags.js          tag list (CSV → IndexedDB), library tags, Danbooru tag lo
 lib/autocomplete.js  the tag suggestion dropdown
 lib/comfy.js         ComfyUI heartbeat, tab bridge, in-page graph editing, queueing
 lib/seed.js          sample data for first run
+icons/               extension icons (16, 32, 48, 128), drawn by tools/make-icons.py
+tools/make-icons.py  draws both projects' icons; needs Pillow and NumPy
 docs/                this file, README images
 ```
 
@@ -42,8 +44,12 @@ node -e "import('./lib/render.js').then(m => console.log(Object.keys(m.DEFAULT_P
 
 Danbooru and e621 reject Node's default fetch, so pass a `User-Agent` header (Danbooru) or feed saved JSON from `curl` (e621) when testing from Node.
 
+## Icons
+
+`python tools/make-icons.py` redraws `icons/` and `docs/images/icon.png`; `python tools/make-icons.py --comfy ../ComfyUI-Prompto` redraws ComfyUI-Prompto's icon. The 16 and 32px icons drop the tear line and barcode, and 48px drops the barcode, so they stay legible; the 128px icon sits in the Web Store's 96px safe area.
+
 ## Releasing
 
 1. Bump `version` in `manifest.json`: patch for fixes and small changes, minor for features.
 2. Commit and push to `main`.
-3. For the Chrome Web Store: zip the folder contents (without `.git`, `.claude` and `docs/`), and upload it in the Chrome Web Store developer dashboard. That needs a one-time developer registration and an icon set, which doesn't exist yet.
+3. For the Chrome Web Store: zip the folder contents (without `.git`, `.claude` and `docs/`), and upload it in the Chrome Web Store developer dashboard. That needs a one-time developer registration; the icon set is in `icons/`.

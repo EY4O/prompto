@@ -1,9 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Prompto",
-  "version": "0.13.2",
+  "version": "0.13.3",
   "description": "Capture, organize and remix Stable Diffusion prompts, image recipes and character tags.",
   "minimum_chrome_version": "116",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "permissions": [
     "sidePanel",
     "storage",
@@ -50,7 +56,11 @@
     "default_path": "sidepanel.html"
   },
   "action": {
-    "default_title": "Open Prompto"
+    "default_title": "Open Prompto",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png"
+    }
   },
   "omnibox": {
     "keyword": "p"

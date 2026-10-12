@@ -1,7 +1,8 @@
 // Capture plumbing. Everything captured here lands in `captures`; the side
 // panel drains that queue into its inbox, so the two never overwrite each other.
 import { postIdFromUrl, fetchPost, e621IdFromUrl, fetchE621 } from "./lib/booru.js";
-import { imageIdFromUrl, fetchCivitaiImage, civitaiToRecipe, smallImage } from "./lib/civitai.js";
+import { imageIdFromUrl, postIdFromUrl as civitaiPostId, hostOf, fetchCivitaiImage, fetchCivitaiPost, hasMeta, civitaiToRecipe, smallImage } from "./lib/civitai.js";
+import { readImageText, recipeFromText } from "./lib/pngmeta.js";
 
 const CIVITAI_PATTERNS = ["https://civitai.com/*", "https://civitai.green/*", "https://civitai.red/*"];
 
@@ -83,9 +84,18 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === "prompto-selection") {
     await pushCapture({ kind: "text", text: info.selectionText.trim(), url: tab && tab.url, source });
   } else if (info.menuItemId === "prompto-image") {
-    await pushCapture({ kind: "image", image: info.srcUrl, url: tab && tab.url, source });
+    // The original file may still carry its generation data (PNG chunks or EXIF).
+    const meta = await recipeFromImageUrl(info.srcUrl);
+    if (meta) await pushCapture({ kind: "png", format: meta.format, meta, thumb: info.srcUrl, title: fileName(info.srcUrl), url: tab && tab.url, source });
+    else await pushCapture({ kind: "image", image: info.srcUrl, url: tab && tab.url, source });
   } else if (info.menuItemId === "prompto-civitai" && tab) {
-    await captureCivitai(info, tab);
+    const url = [info.linkUrl, tab.url].find((u) => u && (imageIdFromUrl(u) || civitaiPostId(u)));
+    if (!url) {
+      await pushCapture({ kind: "text", text: "Couldn't tell which Civitai image that was. Right-click its thumbnail link, or open the image's page first.", url: tab.url, source: "civitai.com" });
+      return;
+    }
+    try { await captureCivitai(url); }
+    catch (e) { await pushCapture({ kind: "text", text: `Couldn't read ${url}: ${e.message}`, url: tab.url, source: hostOf(url) }); }
   } else if (info.menuItemId === "prompto-booru" && tab) {
     // A thumbnail link in search results points at its post; otherwise use the page.
     const ref = postIdFromUrl(info.linkUrl || "") || postIdFromUrl(tab.url);
@@ -102,23 +112,51 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 // Civitai images are read through its API by id, from a link (thumbnails in a
-// feed link to /images/{id}) or from the image page itself.
-async function captureCivitai(info, tab) {
-  const id = imageIdFromUrl(info.linkUrl || "") || imageIdFromUrl(tab.url);
-  if (!id) {
-    await pushCapture({ kind: "text", text: "Couldn't tell which Civitai image that was. Right-click its thumbnail link, or open the image's page first.", url: tab.url, source: "civitai.com" });
-    return;
+// feed link to /images/{id}), an image page, or a post (every image in it that
+// has generation data). The page's own host (.com/.green/.red) is kept.
+async function captureCivitai(url) {
+  const host = hostOf(url);
+  const one = async (item) => {
+    const page = `https://${host}/images/${item.id}`;
+    await pushCapture({ kind: "png", format: "Civitai", meta: civitaiToRecipe(item, page), thumb: smallImage(item.url), title: `Civitai #${item.id}`, url: page, source: host });
+  };
+  const imageId = imageIdFromUrl(url);
+  if (imageId) {
+    await one(await fetchCivitaiImage(imageId, host));
+    return 1;
   }
+  const postId = civitaiPostId(url);
+  const items = (await fetchCivitaiPost(postId, host)).filter(hasMeta);
+  if (!items.length) throw new Error("none of the images in that post have generation data");
+  for (const item of items.slice(0, 20)) await one(item);
+  return Math.min(items.length, 20);
+}
+
+const fileName = (url) => { try { return decodeURIComponent(new URL(url).pathname.split("/").pop()) || "Image"; } catch { return "Image"; } };
+
+// Reads generation data from the original image file, when the host lets us
+// fetch it (most image CDNs allow it). Data: URLs work too.
+async function recipeFromImageUrl(url) {
+  if (!url || !/^(https?:|data:image\/)/.test(url)) return null;
   try {
-    const item = await fetchCivitaiImage(id);
-    await pushCapture({ kind: "png", format: "Civitai", meta: civitaiToRecipe(item), thumb: smallImage(item.url), title: `Civitai #${id}`, url: `https://civitai.com/images/${id}`, source: "civitai.com" });
-  } catch (e) {
-    await pushCapture({ kind: "text", text: `Couldn't read Civitai image ${id}: ${e.message}`, url: tab.url, source: "civitai.com" });
-  }
+    const res = await fetch(url, { credentials: "omit" });
+    if (!res.ok) return null;
+    const buf = await res.arrayBuffer();
+    if (buf.byteLength > 60 * 1024 * 1024) return null;
+    const img = await readImageText(buf);
+    return img ? recipeFromText(img.text) : null;
+  } catch { return null; }
 }
 
 // The "+ Prompto" button on Danbooru character tags.
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (msg && msg.type === "prompto:civitai") {
+    if (sender.tab) chrome.sidePanel.open({ tabId: sender.tab.id }).catch(() => {});
+    captureCivitai(msg.url)
+      .then((count) => reply({ ok: true, count }))
+      .catch((e) => reply({ ok: false, error: e.message }));
+    return true;
+  }
   if (!msg || msg.type !== "prompto:character") return;
   // Open the panel first, while the click still counts as a user gesture.
   if (sender.tab) chrome.sidePanel.open({ tabId: sender.tab.id }).catch(() => {});

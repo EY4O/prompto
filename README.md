@@ -18,8 +18,8 @@ A Chrome side-panel extension for people who make images with Stable Diffusion, 
 
 ## ✨ Key Features
 
-- 📥 **Inbox for everything** — right-click text, an image, a booru post or a Civitai image; type `p` and a space in the address bar; or drop a PNG on the panel.
-- 🧬 **Recipes, results and versions** — reads the prompt and settings inside ComfyUI and A1111/Forge PNGs; images you make land back on their recipe with ★ ratings, every run is versioned, and recipes file into folders.
+- 📥 **Inbox for everything** — right-click text, an image, a booru post or a Civitai image or post (or use the **+ Prompto** button on Civitai); type `p` and a space in the address bar; or drop an image on the panel.
+- 🧬 **Recipes, results and versions** — reads the prompt, settings and exact models inside ComfyUI, A1111/Forge, Fooocus, InvokeAI, SwarmUI and NovelAI images (PNG, JPEG or WebP); images you make land back on their recipe with ★ ratings, every run is versioned, and recipes file into folders.
 - 🧱 **One recipe, every model** — a recipe is made of blocks (subject, character, pose, scene, lighting…) with tags and prose side by side, and model profiles turn it into the right prompt for Illustrious, Anima, Flux Krea or Qwen Image.
 - ✍️ **Prose from tags, no AI** — editable templates turn `1girl, silver hair, twin braids` into "a girl with long silver hair in twin braids" for prose models.
 - 🎭 **Characters from boorus** — a **+ Prompto** button on Danbooru, Gelbooru and Safebooru posts (and right-click on e621) learns a character's usual look from their solo posts and sorts the tags into appearance and outfit.
@@ -122,16 +122,17 @@ Drafts come from a template per block type, edited in **Settings → Prose templ
 </details>
 
 <details>
-<summary><b>🖼️ Reading PNGs</b></summary>
+<summary><b>🖼️ Reading images</b></summary>
 
-ComfyUI stores the queued graph in a PNG text chunk called `prompt`. A1111 and Forge store a `parameters` text block. Prompto reads either one:
+Generators hide their settings inside the image file: ComfyUI stores the queued graph in a PNG text chunk called `prompt`, A1111 and Forge a `parameters` text block (the EXIF comment in JPEG and WebP files), and Fooocus, InvokeAI, SwarmUI and NovelAI their own fields. Drop any PNG, JPEG or WebP on the panel and Prompto reads whichever is there:
 
-- **ComfyUI**: it follows the sampler's positive and negative inputs back to the text nodes, including through ControlNet and Flux guidance nodes, and collects the model, LoRAs, sampler, scheduler, steps, CFG, seed and size. The graph is kept, so **Queue saved graph** can run it again with your edited prompt.
-- **A1111/Forge**: it splits out the negative prompt and settings line, and pulls `<lora:…>` tags out of the prompt.
+- **ComfyUI**: it follows the sampler's positive and negative inputs back to the text nodes, including through ControlNet and Flux guidance nodes, and collects the model, LoRAs (plain loaders, LoRA Manager, rgthree's Power Lora Loader and LoRA stacks), sampler, scheduler, steps, CFG, seed and size. The graph is kept, so **Queue saved graph** can run it again with your edited prompt.
+- **A1111/Forge**: it splits out the negative prompt and settings line, pulls `<lora:…>` tags out of the prompt, and maps sampler names like "DPM++ 2M Karras" to ComfyUI's.
+- **Exact models**: model and LoRA hashes (`Model hash`, `Lora hashes`, `Hashes`) and Civitai version ids are kept with the recipe, so [Model Librarian](https://github.com/EY4O/comfyui-model-librarian) can download exactly the right files.
 
-Images without generation data are kept as reference images.
+**Save image to Prompto** on any site also tries the original file, so images that still carry their data come in as recipes. Images without generation data are kept as reference images.
 
-**Civitai** usually strips the data from its image files, so right-click a Civitai image (or its thumbnail link) → **Import Civitai image recipe** reads it from Civitai's public images API instead. That covers the prompt, negative, model, LoRAs (from the resource list and `<lora:…>` tags), sampler and scheduler (mapped from names like "DPM++ 2M Karras"), steps, CFG, seed and size. Images generated on Civitai with ComfyUI also bring their graph.
+**Civitai** usually strips the data from its image files, so Prompto reads it from Civitai's public images API instead, on the same site you're on (civitai.com, civitai.green or civitai.red). Use the **+ Prompto** button in the corner of an image or post page, or right-click an image (or its thumbnail link) → **Import Civitai image recipe**. A post brings in every image in it that has generation data (up to 20). That covers the prompt, negative, model, LoRAs (from the resource list and `<lora:…>` tags, counted once), their hashes and version ids, base model, sampler and scheduler, steps, CFG, seed and size. Images generated on Civitai with ComfyUI also bring their graph.
 </details>
 
 <details>
@@ -172,6 +173,7 @@ A version is saved each time a recipe leaves Prompto (**Copy prompt**, **Copy fo
 | `prompto` | Prompto | the recipe with its cast members and model profile, or the cast member |
 | `parameters` | Forge, A1111 and anything that reads their format | the prompt, negative and settings, with wildcards rolled |
 | `prompt` | ComfyUI | the recipe's ComfyUI graph with the current prompt, when it has one |
+| `recipe` | [Model Librarian](https://github.com/EY4O/comfyui-model-librarian) and anything that reads the shared [`recipe/1` format](https://github.com/EY4O/comfyui-model-librarian/blob/main/docs/RECIPE_FORMAT.md) | the prompt, settings and exact model references (hashes, Civitai version ids) |
 
 Drop a card on Prompto and it appears in the inbox as a **Prompto card**; **Import** adds it. Characters on a card are matched to your cast by trigger word (or name), so a shared recipe uses your existing Rin instead of a duplicate; new outfits and tags are merged in. Cards leave out results, versions and reference images. A cover image from another site can only be drawn if that site allows it; otherwise the card has no cover.
 </details>
@@ -248,6 +250,7 @@ Underscores become spaces, except in emoticons such as `^_^`.
 - **Load into workflow** and **Selected node** edit the workflow in your open ComfyUI tab. Snippets' **→ Node** goes into the prompt box you last clicked into (at the cursor), or else the selected text nodes. Settings go to the first sampler, so a hires-fix pass keeps its own steps, and dropdown values are only set when ComfyUI offers them.
 - **LoRAs** fill the workflow's existing LoRA loader nodes in order, matched by file name even across folders, with the recipe's weight on both model and CLIP. Loaders the recipe doesn't use, or whose LoRA isn't installed, are bypassed, and Prompto says when the workflow needs more loader nodes. It never adds nodes itself.
 - With **ComfyUI-Prompto** installed, Prompto works through its bridge instead of ComfyUI's internals, syncs your library to the ComfyUI sidebar, and collects captures from ComfyUI.
+- **Missing models**: with ComfyUI-Prompto and [Model Librarian](https://github.com/EY4O/comfyui-model-librarian) installed, loading a recipe whose model or LoRAs aren't installed shows **Get them with Model Librarian** in ComfyUI. It opens the recipe there, finds the exact files by hash or Civitai version id, downloads them into the right folders, and can fill the workflow, adding LoRA loaders if it needs more.
 - Recent ComfyUI versions turn away requests that come straight from extensions. That's why Prompto goes through the open tab. **Queue saved graph** calls the API directly and may need ComfyUI started with `--enable-cors-header`.
 - The ComfyUI desktop app isn't a browser tab, so only **Queue saved graph** works with it.
 </details>
@@ -283,8 +286,8 @@ Each device keeps its own ComfyUI address, LoRA list and Danbooru setting. Chrom
 <summary><b>💾 Data and permissions</b></summary>
 
 - Your library lives in `chrome.storage.local`; the imported tag list lives in IndexedDB. Use **Settings → Library → Export** for a backup. The tag list isn't included.
-- Network requests go only to Danbooru (posts, related tags and optional tag lookups), Civitai's images API (when you import from Civitai), your ComfyUI address, and Google Fonts for the panel's typefaces.
-- Permissions: **side panel**, **storage** and **unlimited storage** for the library and images; **context menus** for right-click capture; **scripting** and **active tab** to read booru pages and reach the ComfyUI tab; access to `localhost`/`127.0.0.1` (ComfyUI), `*.donmai.us`, `gelbooru.com`, `safebooru.org`, `e621.net`/`e926.net` (boorus) and `civitai.com` (Civitai). Other ComfyUI addresses are requested when you save them.
+- Network requests go only to Danbooru (posts, related tags and optional tag lookups), Civitai's images API (when you import from Civitai), the image itself when you save an image (to look for generation data), your ComfyUI address, and Google Fonts for the panel's typefaces.
+- Permissions: **side panel**, **storage** and **unlimited storage** for the library and images; **context menus** for right-click capture; **scripting** and **active tab** to read booru pages and reach the ComfyUI tab; access to `localhost`/`127.0.0.1` (ComfyUI), `*.donmai.us`, `gelbooru.com`, `safebooru.org`, `e621.net`/`e926.net` (boorus) and `civitai.com`/`civitai.green`/`civitai.red` (Civitai, including the **+ Prompto** button on its pages). Other ComfyUI addresses are requested when you save them.
 - Prompto never queues anything on its own. Deleting a recipe, profile or tag list takes a second press to confirm.
 </details>
 

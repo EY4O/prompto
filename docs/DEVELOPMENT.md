@@ -6,12 +6,15 @@ The repository root is the extension: Chrome loads `manifest.json` from it direc
 manifest.json        MV3 manifest; `version` is bumped with every change
 background.js        service worker (module): context menus, omnibox, Danbooru capture, + Prompto messages
 content/booru.js     adds the + Prompto button to character tags on Danbooru, Gelbooru and Safebooru posts
+content/civitai.js   the floating + Prompto button on Civitai image and post pages (follows SPA navigation)
 sidepanel.html/.css  the side panel
 sidepanel.js         views, routing and events for the side panel
 lib/render.js        model profiles, block rendering, linter, Forge export
-lib/pngmeta.js       PNG text-chunk reader, ComfyUI graph and A1111 parameter parsing
+lib/pngmeta.js       PNG text chunks, ComfyUI graph parsing, readRecipeFromFile for any image
+lib/exif.js          JPEG/WebP EXIF (UserComment etc.), XMP and comments
+lib/recipe1.js       the shared recipe/1 format: A1111, NovelAI, InvokeAI, SwarmUI, Fooocus and Civitai parsers, toMeta/fromMeta
 lib/booru.js         Danbooru and e621 posts, character looks (related tags) and tag sorting
-lib/civitai.js       Civitai image recipes from its images API
+lib/civitai.js       Civitai image and post recipes from its images API (.com/.green/.red)
 lib/prose.js         tags → prose templates
 lib/diff.js          tag and word diffs for recipe versions
 lib/wildcards.js     {a|b} and __name__ wildcards, seeded rolls
@@ -43,6 +46,8 @@ Node 18+ and nothing else: the suites use Node's built-in test runner and never 
 ```
 node --test
 ```
+
+`tests/fixtures/recipe1.json` is shared with [Model Librarian](https://github.com/EY4O/comfyui-model-librarian) (same path there): both parsers run every case, so the two stay in step. Change both copies together.
 
 | Suite | Covers |
 |---|---|

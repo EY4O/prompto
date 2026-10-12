@@ -1,6 +1,7 @@
 import { DEFAULT_PROFILES, STOCKS, huesOf, BLOCK_TYPES, render, draftProse, loraBase, estimateClipTokens, lint, toA1111, looksLikeTags, parseTags } from "./lib/render.js";
 import { DEFAULT_TEMPLATES, SLOT_HELP, proseFromTags } from "./lib/prose.js";
 import { readRecipeFromFile, parseComfy } from "./lib/pngmeta.js";
+import { fromMeta as toRecipe1 } from "./lib/recipe1.js";
 import { SEED } from "./lib/seed.js";
 import { loadTagList, importTagCsv, clearTagList, tagListInfo, searchLocal, libraryTags, searchLibrary, searchDanbooru } from "./lib/tags.js";
 import { attachAutocomplete } from "./lib/autocomplete.js";
@@ -195,7 +196,7 @@ function slip(item) {
         .map(([k, l]) => `<div class="group-label">${l}</div><div class="chips">${chipList(post[k], 10)}</div>`).join("");
     files = post.characters.length ? [["import", "Cast…"], ["snippet", "Snippet"]] : [["snippet", "Snippet"]];
   } else if (item.kind === "png") {
-    label = item.format === "Civitai" ? "Civitai" : "PNG · " + item.format;
+    label = item.format === "Civitai" ? "Civitai" : "Recipe · " + item.format;
     const s = item.meta.settings;
     body = `${item.thumb ? `<img class="slip-thumb" src="${esc(item.thumb)}" alt="">` : ""}
       <p class="slip-text">${esc(item.meta.positive || "(no prompt text found)")}</p>
@@ -482,7 +483,7 @@ async function handleFiles(files) {
   let read = 0, saved = 0;
   for (const file of files) {
     if (!file.type.startsWith("image/")) continue;
-    const meta = file.type === "image/png" ? await readRecipeFromFile(file) : null;
+    const meta = await readRecipeFromFile(file).catch(() => null); // PNG chunks, or JPEG/WebP EXIF
     const thumb = await makeThumb(file);
     saved++;
     if (meta && meta.format === "prompto" && meta.data && meta.data.app === "prompto") {
@@ -823,7 +824,9 @@ async function shareRecipe(r) {
   }, {
     prompto: asciiJson(payload),
     parameters: toA1111(r, p, db, (t, part) => (hasWildcards(t) ? expandText(r, t, part) : t)),
-    prompt: graph ? asciiJson(graph) : null
+    prompt: graph ? asciiJson(graph) : null,
+    // The shared recipe format, with exact model references (Model Librarian reads it)
+    recipe: asciiJson(toRecipe1(r, { positive: out.positive, negative: out.negative, title: r.title }))
   });
   downloadBytes(bytes, `${fileSlug(r.title)}.prompto.png`);
   toast("Card saved");
@@ -1706,7 +1709,7 @@ document.addEventListener("click", async (e) => {
     case "comfy-load": {
       const out = finalOut(r);
       noteSend(r, out.positive, "loaded into ComfyUI"); drawVersions(r);
-      return withComfyTab({ mode: "recipe", positive: out.positive, negative: out.negative, settings: r.settings }, "Loaded");
+      return withComfyTab({ mode: "recipe", positive: out.positive, negative: out.negative, settings: r.settings, title: r.title, image: r.image || null }, "Loaded");
     }
     case "comfy-node": { const pos = finalOut(r).positive; noteSend(r, pos, "sent to a node"); drawVersions(r); return withComfyTab({ mode: "selected", text: pos, append: false }, "Sent"); }
     case "send-comfy": noteSend(r, finalOut(r).positive, "queued"); drawVersions(r); return queueSaved(r);
@@ -1932,6 +1935,7 @@ document.addEventListener("change", async (e) => {
     const s = r.settings, v = t.value.trim();
     if (t.dataset.s === "size") { const [w, h] = v.split(/[x×]/).map(Number); s.width = w || undefined; s.height = h || undefined; }
     else s[t.dataset.s] = ["steps", "cfg", "seed"].includes(t.dataset.s) && v !== "" ? Number(v) : v;
+    if (t.dataset.s === "model") delete s.modelRef; // its hash / Civitai id belonged to the old model
     persist(); drawOutput(r);
   }
 });

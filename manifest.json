@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Prompto",
-  "version": "0.16.3",
+  "version": "0.17.0",
   "description": "Capture, organize and remix Stable Diffusion prompts, image recipes and character tags.",
   "minimum_chrome_version": "116",
   "icons": {
@@ -48,6 +48,17 @@
       ],
       "js": [
         "content/booru.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://civitai.com/*",
+        "https://civitai.green/*",
+        "https://civitai.red/*"
+      ],
+      "js": [
+        "content/civitai.js"
       ],
       "run_at": "document_idle"
     }

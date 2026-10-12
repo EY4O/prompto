@@ -175,6 +175,13 @@ describe("toA1111()", () => {
     const r = { blocks: [{ type: "subject", tags: T("cat") }], settings: { sampler: "dpmpp_2m", scheduler: "karras" } };
     assert.match(toA1111(r, P.illustrious, db), /Sampler: DPM\+\+ 2M, Schedule type: Karras/);
   });
+  test("model and LoRA hashes go in the settings line when known", () => {
+    const db = seedDb();
+    const r = { blocks: [{ type: "subject", tags: T("cat") }], settings: { model: "juggernautXL.safetensors", modelRef: { hash: "abcdef1234" },
+      loras: [{ name: "fox_style.safetensors", w: 0.8, hash: "1234abcd5678" }, { name: "plain", w: 1 }] } };
+    const line = toA1111(r, P.illustrious, db).split("\n").pop();
+    assert.equal(line, 'Model hash: abcdef1234, Model: juggernautXL, Lora hashes: "fox_style: 1234abcd5678"');
+  });
   test("no negative line for a null-negative profile", () => {
     const db = seedDb();
     const text = toA1111(recipe(db, "rec_2"), P.krea, db);

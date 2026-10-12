@@ -149,19 +149,20 @@ describe("parseA1111", () => {
     "Steps: 28, Sampler: Euler a, Schedule type: Karras, CFG scale: 5.5, Seed: 123, Size: 832x1216, Model hash: abc, Model: illustriousXL_v10, Lora hashes: \"rin_v2: 1a2b, detail: 3c4d\""
   ].join("\n");
 
-  test("positive, negative, LoRAs pulled out of the prompt", () => {
+  test("positive, negative, LoRAs pulled out of the prompt (with their Lora hashes)", () => {
     const r = parseA1111(text);
     assert.equal(r.positive, "masterpiece, 1girl, smile, outdoors");
     assert.equal(r.negative, "lowres, bad hands");
-    assert.deepEqual(r.settings.loras, [{ name: "rin_v2", w: 0.8 }, { name: "detail", w: 1 }]);
+    assert.deepEqual(r.settings.loras, [{ name: "rin_v2", w: 0.8, hash: "1a2b" }, { name: "detail", w: 1, hash: "3c4d" }]);
     assert.ok(!r.positive.includes("<lora"));
   });
 
-  test("settings line", () => {
+  test("settings line, sampler mapped to ComfyUI names", () => {
     const s = parseA1111(text).settings;
     assert.equal(s.model, "illustriousXL_v10");
-    assert.equal(s.sampler, "Euler a");
-    assert.equal(s.scheduler, "Karras");
+    assert.equal(s.sampler, "euler_ancestral");
+    assert.equal(s.scheduler, "karras");
+    assert.deepEqual(s.modelRef, { hash: "abc" });
     assert.equal(s.steps, 28);
     assert.equal(s.cfg, 5.5);
     assert.equal(s.seed, 123);
@@ -191,5 +192,20 @@ describe("readRecipeFromFile", () => {
     assert.equal(a.settings.steps, 20);
     assert.deepEqual(await readRecipeFromFile(file(makePng())), { format: "none" });
     assert.equal(await readRecipeFromFile(file(new Uint8Array([0, 1, 2]))), null);
+  });
+});
+
+describe("parseComfy LoRA loaders", () => {
+  test("rgthree rows, LoRA Manager lists and lora_name_N stacks (off entries skipped)", () => {
+    const g = {
+      "1": { class_type: "Power Lora Loader (rgthree)", inputs: { lora_1: { on: true, lora: "Krea 2\iiyo.safetensors", strength: 0.75 }, lora_2: { on: false, lora: "off.safetensors", strength: 1 }, "➕ Add Lora": "" } },
+      "2": { class_type: "Lora Loader (LoraManager)", inputs: { text: "<lora:a:1>", loras: { __value__: [{ name: "lm_one", strength: 0.6, active: true }, { name: "lm_off", strength: 1, active: false }] } } },
+      "3": { class_type: "CR LoRA Stack", inputs: { switch_1: "On", lora_name_1: "stack_a.safetensors", model_weight_1: 0.4, switch_2: "Off", lora_name_2: "stack_off.safetensors", lora_name_3: "None" } },
+      "4": { class_type: "LoRA Stacker", inputs: { lora_name_1: "eff.safetensors", lora_wt_1: 0.9 } },
+      "5": { class_type: "CLIPTextEncode", inputs: { text: "x" } }
+    };
+    assert.deepEqual(parseComfy(g).settings.loras, [
+      { name: "Krea 2\iiyo.safetensors", w: 0.75 }, { name: "lm_one", w: 0.6 }, { name: "stack_a.safetensors", w: 0.4 }, { name: "eff.safetensors", w: 0.9 }
+    ]);
   });
 });

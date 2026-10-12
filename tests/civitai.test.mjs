@@ -1,6 +1,6 @@
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { imageIdFromUrl, mapSampler, smallImage, civitaiToRecipe, fetchCivitaiImage } from "../lib/civitai.js";
+import { imageIdFromUrl, postIdFromUrl, hostOf, hasMeta, mapSampler, smallImage, civitaiToRecipe, fetchCivitaiImage, fetchCivitaiPost } from "../lib/civitai.js";
 import { stubFetch } from "./helpers.mjs";
 
 let stub = null;
@@ -94,5 +94,46 @@ describe("fetchCivitaiImage (stubbed)", () => {
   test("throws when there's no public image", async () => {
     stub = stubFetch(() => ({ items: [] }));
     await assert.rejects(fetchCivitaiImage(1), /no public image/);
+  });
+});
+
+describe("hosts and posts", () => {
+  test("post ids and hosts", () => {
+    assert.equal(postIdFromUrl("https://civitai.red/posts/77?x=1"), 77);
+    assert.equal(postIdFromUrl("https://civitai.com/images/77"), null);
+    assert.equal(imageIdFromUrl("https://civitai.red/images/5"), 5);
+    assert.equal(hostOf("https://civitai.red/images/5"), "civitai.red");
+    assert.equal(hostOf("https://www.civitai.com/images/5"), "civitai.com");
+    assert.equal(hostOf("https://example.com/images/5"), "civitai.com");
+  });
+  test("the API is asked on the page's own host", async () => {
+    stub = stubFetch(() => ({ items: [{ id: 5, meta: { prompt: "x" } }] }));
+    await fetchCivitaiImage(5, "civitai.red");
+    assert.equal(stub.calls[0].url, "https://civitai.red/api/v1/images?imageId=5&withMeta=true");
+  });
+  test("falls back to civitai.com when that host's API fails", async () => {
+    stub = stubFetch((url) => (url.includes("civitai.green") ? { status: 404, body: {} } : { items: [{ id: 5 }] }));
+    assert.equal((await fetchCivitaiImage(5, "civitai.green")).id, 5);
+    assert.ok(stub.calls[1].url.startsWith("https://civitai.com/"));
+  });
+  test("a post lists its images; hasMeta tells which have recipes", async () => {
+    stub = stubFetch(() => ({ items: [{ id: 1, meta: { prompt: "a" } }, { id: 2, meta: null }, { id: 3, meta: { meta: { civitaiResources: [{ type: "lora" }] } } }] }));
+    const items = await fetchCivitaiPost(77, "civitai.com");
+    assert.ok(stub.calls[0].url.endsWith("postId=77&limit=50&withMeta=true"));
+    assert.deepEqual(items.map(hasMeta), [true, false, true]);
+  });
+});
+
+describe("civitaiToRecipe keeps the exact model references", () => {
+  test("hashes, version ids, base model; tag + resource + civitaiResource are one LoRA", () => {
+    const r = civitaiToRecipe({
+      id: 555, baseModel: "Illustrious",
+      meta: { prompt: "a lighthouse, <lora:watercolor_v3:0.8>", Model: "illustriousXL_v20", "Model hash": "1A2B3C4D5E", sampler: "Euler a",
+        resources: [{ name: "Watercolor Wash", type: "lora", weight: 0.8, hash: "aaaa1111bb" }],
+        civitaiResources: [{ type: "checkpoint", modelVersionId: 999 }, { type: "lora", weight: 0.8, modelVersionId: 111, modelVersionName: "v3" }] }
+    }, "https://civitai.red/images/555");
+    assert.deepEqual(r.settings.loras, [{ name: "watercolor_v3", w: 0.8, hash: "aaaa1111bb", versionId: 111, label: "Watercolor Wash" }]);
+    assert.deepEqual(r.settings.modelRef, { hash: "1a2b3c4d5e", versionId: 999 });
+    assert.equal(r.settings.baseModel, "Illustrious");
   });
 });

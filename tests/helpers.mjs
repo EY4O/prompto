@@ -70,3 +70,35 @@ export function stubFetch(handler) {
   };
   return { calls, restore: () => { globalThis.fetch = original; } };
 }
+
+// EXIF (big-endian TIFF) with UserComment in the Exif IFD, as A1111/Forge write it.
+// encoding "unicode" = UTF-16BE (piexif's default), "unicode-le", or "ascii".
+export function exifUserComment(text, encoding = "unicode") {
+  const body = encoding === "ascii" ? concat(latin1("ASCII\0\0\0"), utf8(text))
+    : concat(latin1("UNICODE\0"), Uint8Array.from([...text].flatMap((ch) => {
+      const c = ch.charCodeAt(0);
+      return encoding === "unicode-le" ? [c & 255, c >> 8] : [c >> 8, c & 255];
+    })));
+  const t = new Uint8Array(44 + body.length);
+  const v = new DataView(t.buffer);
+  t.set(latin1("MM"), 0); v.setUint16(2, 42); v.setUint32(4, 8);
+  v.setUint16(8, 1); v.setUint16(10, 0x8769); v.setUint16(12, 4); v.setUint32(14, 1); v.setUint32(18, 26); v.setUint32(22, 0);
+  v.setUint16(26, 1); v.setUint16(28, 0x9286); v.setUint16(30, 7); v.setUint32(32, body.length); v.setUint32(36, 44); v.setUint32(40, 0);
+  t.set(body, 44);
+  return t;
+}
+
+const segment = (marker, data) => concat([0xff, marker, (data.length + 2) >> 8, (data.length + 2) & 255], data);
+
+export function makeJpeg(text, { encoding, comment } = {}) {
+  return concat([0xff, 0xd8], segment(0xe1, concat(latin1("Exif\0\0"), exifUserComment(text, encoding))),
+    comment ? segment(0xfe, utf8(comment)) : new Uint8Array(0), [0xff, 0xda, 0, 2], [0xff, 0xd9]);
+}
+
+const le32 = (n) => { const b = new Uint8Array(4); new DataView(b.buffer).setUint32(0, n, true); return b; };
+
+export function makeWebp(text, encoding = "ascii") {
+  const t = exifUserComment(text, encoding);
+  const body = concat(latin1("WEBP"), latin1("EXIF"), le32(t.length), t, t.length & 1 ? [0] : []);
+  return concat(latin1("RIFF"), le32(body.length), body);
+}

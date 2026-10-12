@@ -19,6 +19,7 @@ A Chrome side-panel extension for people who make images with Stable Diffusion, 
 - 📥 **Inbox for everything** — right-click text, an image or a booru post; type `p` and a space in the address bar; or drop a PNG on the panel.
 - 🧬 **Recipes from PNGs** — reads the prompt, negative, model, LoRAs, sampler, steps and seed that ComfyUI and A1111/Forge save inside their images.
 - 🧱 **One recipe, every model** — a recipe is made of blocks (subject, character, pose, scene, lighting…) with tags and prose side by side, and model profiles turn it into the right prompt for Illustrious, Anima, Flux Krea or Qwen Image.
+- ✍️ **Prose from tags, no AI** — editable templates turn `1girl, silver hair, twin braids` into "a girl with long silver hair in twin braids" for prose models.
 - 🎭 **Characters from Danbooru** — a **+ Prompto** button on Danbooru posts learns a character's usual look from their solo posts and sorts the tags into appearance and outfit.
 - ⌨️ **Tag autocomplete** — suggestions from your own library, an imported Danbooru tag list (with post counts and aliases), and live Danbooru lookups.
 - 🎚️ **Prompt tools** — scroll over a tag to weight it, a CLIP token counter, and a checker for duplicates, contradictions and over-weighted tags.
@@ -90,7 +91,24 @@ A **model profile** decides how the blocks become a prompt:
 | Quality tags | Added first in tag output, e.g. `masterpiece, best quality` |
 | Default negative | Used unless the recipe has its own; can be turned off (Flux Krea runs at CFG 1) |
 
-The four starting profiles (Illustrious, Anima, Flux Krea, Qwen Image) are suggestions. Edit them, duplicate them, or add your own in **Settings → Model profiles**, and **Reset** restores a starting profile. When a block has no prose, prose output uses its tags as written, and the checker says so.
+The four starting profiles (Illustrious, Anima, Flux Krea, Qwen Image) are suggestions. Edit them, duplicate them, or add your own in **Settings → Model profiles**, and **Reset** restores a starting profile.
+</details>
+
+<details>
+<summary><b>✍️ Prose from tags</b></summary>
+
+When a block has no prose, prose and tags + prose profiles write one from its tags. Empty prose fields show the draft as a placeholder; **Write** fills it in so you can edit it. Turn this off per profile with **Draft prose from tags when a block has none**.
+
+Drafts come from a template per block type, edited in **Settings → Prose templates**:
+
+| Block | Default template | Example |
+|---|---|---|
+| Character | `[{name}, ]{who}[ with {appearance}]` | Rin, a girl with long silver hair in twin braids, red eyes and freckles |
+| Outfit | `wearing {items}` | wearing an oversized hoodie, black shorts and high-top sneakers |
+| Scene | `[{place}][ {time}][ with {details}]` | a city alley at night with neon lights and rain |
+| Lighting | `lit by {list}` | lit by backlight and a rim light |
+
+`{slots}` are filled from the tags; text in `[brackets]` is left out when a slot inside it is empty. Character drafts combine hair length, colour and style into one phrase, turn count and age tags into "a girl" or "a man", and leave out trigger words. `{name}` uses the cast member's name instead. Generic tags are dropped when a more specific one is present ("capelet" when "white capelet" is there).
 </details>
 
 <details>

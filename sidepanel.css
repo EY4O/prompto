@@ -364,6 +364,16 @@ button.chip:hover, .chip.edit:hover { border-color: var(--line-2); }
 .ac-dot[data-cat="4"] { background: #3f9b6e; }
 .ac-dot[data-cat="5"] { background: #d39a3d; }
 
+/* ---------- Prose templates ---------- */
+.tpl-grid { display: grid; gap: 8px; margin-top: 10px; }
+.tpl-grid label { display: grid; gap: 2px; font-size: 10px; text-transform: uppercase; color: var(--fg-2); }
+.tpl-grid input { border: 0; border-bottom: 1px solid var(--line-2); background: none; outline: none; font-family: var(--mono); font-size: 12px; padding: 2px 0; color: var(--fg); text-transform: none; }
+.tpl-grid input:focus { border-color: var(--rose); }
+.tpl-grid small { font-family: var(--mono); font-size: 10px; text-transform: none; color: var(--fg-3); }
+.tpl-sample { border-left: 2px solid var(--rose); padding-left: 8px; }
+.group-label.spread { display: flex; }
+.group-label .link { font-size: 10px; }
+
 /* ---------- Danbooru import sheet ---------- */
 .chip.bucket { cursor: pointer; transition: border-color 0.2s, opacity 0.2s; }
 .chip.b-appearance { border-color: rgba(183, 110, 121, 0.7); }

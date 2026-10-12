@@ -1,4 +1,5 @@
-import { DEFAULT_PROFILES, STOCKS, huesOf, BLOCK_TYPES, render, estimateClipTokens, lint, toA1111, looksLikeTags, parseTags } from "./lib/render.js";
+import { DEFAULT_PROFILES, STOCKS, huesOf, BLOCK_TYPES, render, draftProse, estimateClipTokens, lint, toA1111, looksLikeTags, parseTags } from "./lib/render.js";
+import { DEFAULT_TEMPLATES, SLOT_HELP, proseFromTags } from "./lib/prose.js";
 import { readRecipeFromFile, parseComfy } from "./lib/pngmeta.js";
 import { SEED } from "./lib/seed.js";
 import { loadTagList, importTagCsv, clearTagList, tagListInfo, searchLocal, libraryTags, searchLibrary, searchDanbooru } from "./lib/tags.js";
@@ -37,7 +38,7 @@ const persist = () => { ui.rev++; clearTimeout(saveTimer); saveTimer = setTimeou
 function migrate(d) {
   for (const k of ["inbox", "recipes", "characters", "snippets"]) if (!Array.isArray(d[k])) d[k] = [];
   if (!d.profiles || !Object.keys(d.profiles).length) d.profiles = structuredClone(DEFAULT_PROFILES);
-  d.settings = { comfyUrl: DEFAULT_COMFY, onlineTags: true, ...(d.settings || {}) };
+  d.settings = { comfyUrl: DEFAULT_COMFY, onlineTags: true, proseTemplates: {}, ...(d.settings || {}) };
   for (const c of d.characters) { c.appearance = c.appearance || []; c.outfits = c.outfits || {}; }
   d.nextNo = Math.max(d.nextNo || 1, ...d.recipes.map((r) => (r.no || 0) + 1));
   d.version = 2;
@@ -497,6 +498,7 @@ function chip(x, i, j) {
 
 function blockHtml(b, i) {
   const tools = `<div class="tools">
+    ${b.type !== "character" && b.tags.length ? `<button data-act="block-draft" data-i="${i}" title="Write prose from this block's tags">${b.prose ? "Redraft" : "Write"}</button>` : ""}
     <button data-act="block-mute" data-i="${i}">${b.off ? "Unmute" : "Mute"}</button>
     ${i ? `<button data-act="block-up" data-i="${i}" aria-label="Move up">↑</button>` : ""}
     <button data-act="block-del" data-i="${i}">Remove</button></div>`;
@@ -515,7 +517,7 @@ function blockHtml(b, i) {
   return `<div class="block${b.off ? " is-off" : ""}">
     <div class="block-head"><span class="block-type">${esc(b.type)}</span>${tools}</div>
     <div class="chips">${b.tags.map((x, j) => chip(x, i, j)).join("")}<input class="chip-add" data-i="${i}" placeholder="+ tags" aria-label="Add tags to ${esc(b.type)}"></div>
-    <textarea class="prose" data-i="${i}" rows="1" placeholder="Prose for natural-language models">${esc(b.prose)}</textarea>
+    <textarea class="prose" data-i="${i}" rows="1" placeholder="${esc(draftProse(b, db) || "Prose for natural-language models")}">${esc(b.prose)}</textarea>
   </div>`;
 }
 
@@ -724,14 +726,20 @@ function listTarget(path) {
   const ch = charById(a);
   return b === "appearance" ? ch.appearance : ch.outfits[c].tags;
 }
+const templates = () => db.settings.proseTemplates;
+const castDraft = (c, outfit) => outfit
+  ? proseFromTags("outfit", c.outfits[outfit].tags, templates())
+  : proseFromTags("character", c.appearance, templates(), { name: c.name });
+
 function castTicket(c, i) {
   const open = ui.openChar === c.id;
   const ro = (arr) => arr.map((t) => `<span class="chip ro">${esc(t)}</span>`).join("");
   const detail = open ? `<div class="char-open">
       <div class="group-label">Appearance</div><div class="chips">${strChips(c.appearance, `${c.id}|appearance`)}</div>
-      <div class="group-label">Prose</div><textarea class="prose" data-cf="prose" data-c="${c.id}" rows="1" placeholder="a short natural-language description">${esc(c.prose)}</textarea>
+      <div class="group-label spread">Prose<button class="link" data-act="cast-draft" data-c="${c.id}">Write from tags</button></div><textarea class="prose" data-cf="prose" data-c="${c.id}" rows="1" placeholder="${esc(castDraft(c) || "a short natural-language description")}">${esc(c.prose)}</textarea>
       ${Object.entries(c.outfits).map(([o, v]) => `<div class="group-label">Outfit · ${esc(o)}</div><div class="chips">${strChips(v.tags, `${c.id}|outfit|${o}`)}</div>
-        <textarea class="prose" data-cf="outfit-prose" data-o="${esc(o)}" data-c="${c.id}" rows="1" placeholder="what they're wearing, in prose">${esc(v.prose)}</textarea>`).join("")}
+        <div class="row" style="justify-content:flex-end"><button class="link" data-act="cast-draft" data-c="${c.id}" data-o="${esc(o)}">Write from tags</button></div>
+        <textarea class="prose" data-cf="outfit-prose" data-o="${esc(o)}" data-c="${c.id}" rows="1" placeholder="${esc(castDraft(c, o) || "what they're wearing, in prose")}">${esc(v.prose)}</textarea>`).join("")}
       <div class="row"><input class="chip-add" data-new-outfit="${c.id}" placeholder="+ outfit name" aria-label="New outfit"></div>
       <div class="group-label">Trigger word</div><textarea class="prose" data-cf="trigger" data-c="${c.id}" rows="1">${esc(c.trigger)}</textarea>
       <div class="group-label">Notes</div><textarea class="prose" data-cf="notes" data-c="${c.id}" rows="1" placeholder="what works, what doesn't">${esc(c.notes)}</textarea>
@@ -794,6 +802,7 @@ function profileTicket(p) {
       <div class="seg" role="group" aria-label="Output format">${["tags", "hybrid", "prose"].map((v) => `<button data-act="pf-format" data-p="${esc(p.id)}" data-v="${v}" aria-pressed="${p.format === v}">${FORMAT_LABEL[v]}</button>`).join("")}</div>
       ${check("weights", "Write weights as (tag:1.2)", p.weights)}
       ${check("clip", "Show the CLIP token counter", p.clip)}
+      ${p.format !== "tags" ? check("autoProse", "Draft prose from tags when a block has none", p.autoProse !== false) : ""}
       <div class="group-label">Quality tags, added first in tag output</div>
       <div class="chips">${strChips(p.prefix, `profile|${p.id}|prefix`)}</div>
       <div class="group-label">Default negative</div>
@@ -826,6 +835,18 @@ function drawSettings() {
     <p class="hint">How a recipe turns into prompt text. Changes apply to every recipe on that profile.</p>
     <div class="stack" style="margin-top:12px">${Object.values(db.profiles).map(profileTicket).join("")}</div>
     <div class="row" style="margin-top:12px"><button class="btn ghost sm" data-act="pf-new">New profile</button></div>
+
+    <div class="sec">Prose templates</div>
+    <section class="tk" style="--stub:0px;padding-bottom:14px">
+      <div class="tk-bg"></div>
+      <div class="tk-head"><span class="tag">Tags to prose</span><span class="kv">no AI</span></div>
+      <p class="hint" style="margin-top:8px">How blocks without prose are written for prose models. Slots in {braces} are filled from the tags; text in [brackets] is left out when a slot inside it is empty.</p>
+      <div class="tpl-grid">${Object.keys(DEFAULT_TEMPLATES).map((k) => {
+        const v = db.settings.proseTemplates[k];
+        return `<label>${esc(k)}<input data-tpl="${k}" value="${esc(v ?? DEFAULT_TEMPLATES[k])}" spellcheck="false"><small>${esc(SLOT_HELP[k])} · <button class="link" data-act="tpl-reset" data-k="${k}">Reset</button></small></label>`;
+      }).join("")}</div>
+      <p class="kv tpl-sample" style="margin-top:10px">${esc(proseFromTags("character", ["1girl", "silver hair", "long hair", "twin braids", "red eyes", "freckles"], db.settings.proseTemplates, { name: "Rin" }))}</p>
+    </section>
 
     <div class="sec">Tag autocomplete</div>
     <section class="tk" style="--stub:0px;padding-bottom:14px">
@@ -985,6 +1006,19 @@ document.addEventListener("click", async (e) => {
       r.blocks[c.dataset.i].tags.splice(c.dataset.j, 1); refresh(r); break;
     }
     case "block-mute": r.blocks[i].off = !r.blocks[i].off; refresh(r); break;
+    case "block-draft": {
+      const text = draftProse(r.blocks[i], db);
+      if (!text) return toast("Add some tags first");
+      r.blocks[i].prose = text; refresh(r); $(`.prose[data-i="${i}"]`)?.focus(); break;
+    }
+    case "cast-draft": {
+      const c = charById(el.dataset.c), o = el.dataset.o;
+      const text = castDraft(c, o);
+      if (!text) return toast("Add some tags first");
+      if (o) c.outfits[o].prose = text; else c.prose = text;
+      persist(); draw(); break;
+    }
+    case "tpl-reset": delete db.settings.proseTemplates[el.dataset.k]; persist(); draw(); break;
     case "block-up": [r.blocks[i - 1], r.blocks[i]] = [r.blocks[i], r.blocks[i - 1]]; refresh(r); break;
     case "block-del": r.blocks.splice(i, 1); refresh(r); break;
     case "add-block": {
@@ -1136,6 +1170,13 @@ document.addEventListener("input", (e) => {
   if (t.id === "neg") { r.negative = t.value; persist(); return drawOutput(r); }
   if (t.classList.contains("prose") && t.dataset.i != null) { r.blocks[t.dataset.i].prose = t.value; persist(); return drawOutput(r); }
   if (t.dataset.pf && t.type !== "checkbox") { db.profiles[t.dataset.p][t.dataset.pf] = t.value; return persist(); }
+  if (t.dataset.tpl) {
+    db.settings.proseTemplates[t.dataset.tpl] = t.value;
+    persist();
+    const sample = $(".tpl-sample");
+    if (sample) sample.textContent = proseFromTags("character", ["1girl", "silver hair", "long hair", "twin braids", "red eyes", "freckles"], db.settings.proseTemplates, { name: "Rin" });
+    return;
+  }
   if (t.dataset.cf) {
     const c = charById(t.dataset.c);
     if (t.dataset.cf === "outfit-prose") c.outfits[t.dataset.o].prose = t.value;

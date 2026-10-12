@@ -16,7 +16,7 @@ A Chrome side-panel extension for people who make images with Stable Diffusion, 
 
 ## ✨ Key Features
 
-- 📥 **Inbox for everything** — right-click text, an image or a booru post; type `p` and a space in the address bar; or drop a PNG on the panel.
+- 📥 **Inbox for everything** — right-click text, an image, a booru post or a Civitai image; type `p` and a space in the address bar; or drop a PNG on the panel.
 - 🧬 **Recipes, results and versions** — reads the prompt and settings inside ComfyUI and A1111/Forge PNGs; images you make land back on their recipe with ★ ratings, and every run is versioned so you can compare what changed.
 - 🧱 **One recipe, every model** — a recipe is made of blocks (subject, character, pose, scene, lighting…) with tags and prose side by side, and model profiles turn it into the right prompt for Illustrious, Anima, Flux Krea or Qwen Image.
 - ✍️ **Prose from tags, no AI** — editable templates turn `1girl, silver hair, twin braids` into "a girl with long silver hair in twin braids" for prose models.
@@ -120,6 +120,8 @@ ComfyUI stores the queued graph in a PNG text chunk called `prompt`. A1111 and F
 - **A1111/Forge**: it splits out the negative prompt and settings line, and pulls `<lora:…>` tags out of the prompt.
 
 Images without generation data are kept as reference images.
+
+**Civitai** usually strips the data from its image files, so right-click a Civitai image (or its thumbnail link) → **Import Civitai image recipe** reads it from Civitai's public images API instead. That covers the prompt, negative, model, LoRAs (from the resource list and `<lora:…>` tags), sampler and scheduler (mapped from names like "DPM++ 2M Karras"), steps, CFG, seed and size. Images generated on Civitai with ComfyUI also bring their graph.
 </details>
 
 <details>
@@ -188,8 +190,8 @@ Underscores become spaces, except in emoticons such as `^_^`.
 <summary><b>💾 Data and permissions</b></summary>
 
 - Your library lives in `chrome.storage.local`; the imported tag list lives in IndexedDB. Use **Settings → Library → Export** for a backup. The tag list isn't included.
-- Network requests go only to Danbooru (posts, related tags and optional tag lookups), your ComfyUI address, and Google Fonts for the panel's typefaces.
-- Permissions: **side panel**, **storage** and **unlimited storage** for the library and images; **context menus** for right-click capture; **scripting** and **active tab** to read booru pages and reach the ComfyUI tab; access to `localhost`/`127.0.0.1` (ComfyUI) and `*.donmai.us` (Danbooru). Other ComfyUI addresses are requested when you save them.
+- Network requests go only to Danbooru (posts, related tags and optional tag lookups), Civitai's images API (when you import from Civitai), your ComfyUI address, and Google Fonts for the panel's typefaces.
+- Permissions: **side panel**, **storage** and **unlimited storage** for the library and images; **context menus** for right-click capture; **scripting** and **active tab** to read booru pages and reach the ComfyUI tab; access to `localhost`/`127.0.0.1` (ComfyUI), `*.donmai.us` (Danbooru) and `civitai.com` (Civitai). Other ComfyUI addresses are requested when you save them.
 - Prompto never queues anything on its own. Deleting a recipe, profile or tag list takes a second press to confirm.
 </details>
 

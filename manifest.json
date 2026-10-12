@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Prompto",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Capture, organize and remix Stable Diffusion prompts, image recipes and character tags.",
   "minimum_chrome_version": "116",
   "permissions": [
@@ -15,7 +15,10 @@
   "host_permissions": [
     "http://127.0.0.1/*",
     "http://localhost/*",
-    "https://*.donmai.us/*"
+    "https://*.donmai.us/*",
+    "https://civitai.com/*",
+    "https://civitai.green/*",
+    "https://civitai.red/*"
   ],
   "optional_host_permissions": [
     "http://*/*",

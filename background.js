@@ -1,6 +1,9 @@
 // Capture plumbing. Everything captured here lands in `captures`; the side
 // panel drains that queue into its inbox, so the two never overwrite each other.
 import { postIdFromUrl, fetchPost } from "./lib/booru.js";
+import { imageIdFromUrl, fetchCivitaiImage, civitaiToRecipe, smallImage } from "./lib/civitai.js";
+
+const CIVITAI_PATTERNS = ["https://civitai.com/*", "https://civitai.green/*", "https://civitai.red/*"];
 
 const BOORU_PATTERNS = [
   "https://danbooru.donmai.us/*",
@@ -19,6 +22,12 @@ chrome.runtime.onInstalled.addListener(() => {
       title: "Import post to Prompto",
       contexts: ["page", "image", "link"],
       documentUrlPatterns: BOORU_PATTERNS
+    });
+    chrome.contextMenus.create({
+      id: "prompto-civitai",
+      title: "Import Civitai image recipe",
+      contexts: ["page", "image", "link"],
+      documentUrlPatterns: CIVITAI_PATTERNS
     });
   });
 });
@@ -67,6 +76,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     await pushCapture({ kind: "text", text: info.selectionText.trim(), url: tab && tab.url, source });
   } else if (info.menuItemId === "prompto-image") {
     await pushCapture({ kind: "image", image: info.srcUrl, url: tab && tab.url, source });
+  } else if (info.menuItemId === "prompto-civitai" && tab) {
+    await captureCivitai(info, tab);
   } else if (info.menuItemId === "prompto-booru" && tab) {
     // A thumbnail link in search results points at its post; otherwise use the page.
     const ref = postIdFromUrl(info.linkUrl || "") || postIdFromUrl(tab.url);
@@ -79,6 +90,22 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
   }
 });
+
+// Civitai images are read through its API by id, from a link (thumbnails in a
+// feed link to /images/{id}) or from the image page itself.
+async function captureCivitai(info, tab) {
+  const id = imageIdFromUrl(info.linkUrl || "") || imageIdFromUrl(tab.url);
+  if (!id) {
+    await pushCapture({ kind: "text", text: "Couldn't tell which Civitai image that was. Right-click its thumbnail link, or open the image's page first.", url: tab.url, source: "civitai.com" });
+    return;
+  }
+  try {
+    const item = await fetchCivitaiImage(id);
+    await pushCapture({ kind: "png", format: "Civitai", meta: civitaiToRecipe(item), thumb: smallImage(item.url), title: `Civitai #${id}`, url: `https://civitai.com/images/${id}`, source: "civitai.com" });
+  } catch (e) {
+    await pushCapture({ kind: "text", text: `Couldn't read Civitai image ${id}: ${e.message}`, url: tab.url, source: "civitai.com" });
+  }
+}
 
 // The "+ Prompto" button on Danbooru character tags.
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {

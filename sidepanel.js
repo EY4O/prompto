@@ -179,7 +179,7 @@ function slip(item) {
         .map(([k, l]) => `<div class="group-label">${l}</div><div class="chips">${chipList(post[k], 10)}</div>`).join("");
     files = post.characters.length ? [["import", "Cast…"], ["snippet", "Snippet"]] : [["snippet", "Snippet"]];
   } else if (item.kind === "png") {
-    label = "PNG · " + item.format;
+    label = item.format === "Civitai" ? "Civitai" : "PNG · " + item.format;
     const s = item.meta.settings;
     body = `${item.thumb ? `<img class="slip-thumb" src="${esc(item.thumb)}" alt="">` : ""}
       <p class="slip-text">${esc(item.meta.positive || "(no prompt text found)")}</p>
@@ -642,8 +642,11 @@ function addLora(r, name, w) {
   r.settings.loras = r.settings.loras || [];
   const hit = r.settings.loras.find((l) => loraBase(l.name) === loraBase(name));
   if (hit) hit.w = weight; else r.settings.loras.push({ name, w: weight });
-  toast(`LoRA ${loraBase(name)} at ${weight}`);
+  toast(`LoRA ${loraLabel(name)} at ${weight}`);
 }
+
+// For showing: file name without folders or extension, original case.
+const loraLabel = (v) => String(v || "").split(/[\\/]/).pop().replace(/\.(safetensors|ckpt|pt|bin)$/i, "");
 
 function loraRows(r) {
   const installed = db.settings.loraList && db.settings.loraList.names;
@@ -651,10 +654,10 @@ function loraRows(r) {
   const rows = (r.settings.loras || []).map((l, j) => {
     const missing = have && !have.has(loraBase(l.name));
     return `<div class="lora-row${missing ? " missing" : ""}">
-      <span class="lora-name" title="${esc(l.name)}${missing ? " (not in ComfyUI's loras folder)" : ""}">${missing ? "⚠ " : ""}${esc(loraBase(l.name))}</span>
-      <input type="range" min="0" max="2" step="0.05" value="${l.w}" data-lora-w="${j}" aria-label="Weight for ${esc(loraBase(l.name))}">
+      <span class="lora-name" title="${esc(l.name)}${missing ? " (not in ComfyUI's loras folder)" : ""}">${missing ? "⚠ " : ""}${esc(loraLabel(l.name))}</span>
+      <input type="range" min="0" max="2" step="0.05" value="${l.w}" data-lora-w="${j}" aria-label="Weight for ${esc(loraLabel(l.name))}">
       <input class="lora-num" type="number" min="-2" max="3" step="0.05" value="${l.w}" data-lora-w="${j}" aria-label="Weight">
-      <button data-act="lora-del" data-j="${j}" aria-label="Remove ${esc(loraBase(l.name))}">×</button>
+      <button data-act="lora-del" data-j="${j}" aria-label="Remove ${esc(loraLabel(l.name))}">×</button>
     </div>`;
   }).join("");
   return `<span class="lora-label">LoRAs</span>${rows}<input class="lora-add" placeholder="${installed ? `+ LoRA (${installed.length} installed)` : "+ LoRA name"}" aria-label="Add a LoRA" spellcheck="false">`;
@@ -670,7 +673,7 @@ function loraSuggestions(q, plain) {
   return [...names].filter(([b]) => !needle || b.includes(needle)).sort(([a], [b]) => (b.startsWith(needle) - a.startsWith(needle)) || a.localeCompare(b)).slice(0, 8)
     .map(([b, full]) => {
       const folder = String(full).split(/[\\/]/).slice(0, -1).join("/");
-      return { name: b, insert: plain ? full : `<lora:${full}:1>`, cat: "lora", count: folder, source: "lora" };
+      return { name: loraLabel(full), insert: plain ? full : `<lora:${full}:1>`, cat: "lora", count: folder, source: "lora" };
     });
 }
 
@@ -1410,8 +1413,7 @@ document.addEventListener("change", async (e) => {
   }
   if (t.dataset.s) {
     const s = r.settings, v = t.value.trim();
-    if (t.dataset.s === "loras") s.loras = v ? v.split(",").map((p) => { const [name, w] = p.trim().split(/:(?=[\d.]+$)/); return { name, w: Number(w || 1) }; }) : [];
-    else if (t.dataset.s === "size") { const [w, h] = v.split(/[x×]/).map(Number); s.width = w || undefined; s.height = h || undefined; }
+    if (t.dataset.s === "size") { const [w, h] = v.split(/[x×]/).map(Number); s.width = w || undefined; s.height = h || undefined; }
     else s[t.dataset.s] = ["steps", "cfg", "seed"].includes(t.dataset.s) && v !== "" ? Number(v) : v;
     persist(); drawOutput(r);
   }

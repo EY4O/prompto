@@ -28,6 +28,14 @@ A Chrome side-panel extension for people who make images with Stable Diffusion, 
 - 🔗 **ComfyUI and Forge** — load a recipe, LoRAs included, straight into the open ComfyUI workflow, or copy it in Forge's format and fill in every setting with one click.
 - 💾 **Yours to keep and share** — everything stays on your devices, synced through a folder you choose (OneDrive, Dropbox…), with JSON backups, PNG share cards and imports from other prompt managers. No account, and no AI.
 
+## 🎬 From booru tag to image
+
+![A character goes from a Safebooru post into Prompto's cast, then into ComfyUI's Prompto Character node and out as an image](docs/images/walkthrough.gif)
+
+**+ Prompto** on a Safebooru post drafts Frieren's cast card from her solo posts, **File to cast** saves her with a **mage** outfit, and with [ComfyUI-Prompto](https://github.com/EY4O/ComfyUI-Prompto) she shows up in the **Prompto Character** node, ready to queue.
+
+<sub>Recorded with Prompto 0.16 and ComfyUI-Prompto 0.4 on an Illustrious checkpoint. The post's artwork is blurred.</sub>
+
 ## 📸 Screenshots
 
 | | |

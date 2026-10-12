@@ -364,6 +364,11 @@ button.chip:hover, .chip.edit:hover { border-color: var(--line-2); }
 .ac-dot[data-cat="4"] { background: #3f9b6e; }
 .ac-dot[data-cat="5"] { background: #d39a3d; }
 
+/* ---------- Wildcards ---------- */
+.wild-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px; padding: 6px 8px; border: 1px dashed var(--line-2); border-radius: 8px; }
+.wild-bar .kv { margin-right: auto; }
+#variant-count { font: inherit; font-size: 11px; border: 1px solid var(--line-2); border-radius: 50px; padding: 4px 8px; background: var(--bg); color: var(--fg); }
+
 /* ---------- LoRAs ---------- */
 #lora-edit { display: grid; gap: 4px; }
 .lora-label { font-size: 10px; text-transform: uppercase; color: var(--fg-2); }

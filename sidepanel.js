@@ -5,8 +5,9 @@ import { SEED } from "./lib/seed.js";
 import { loadTagList, importTagCsv, clearTagList, tagListInfo, searchLocal, libraryTags, searchLibrary, searchDanbooru } from "./lib/tags.js";
 import { attachAutocomplete } from "./lib/autocomplete.js";
 import { tagDiff, wordDiff, settingsDiff, changed } from "./lib/diff.js";
+import { hasWildcards, wildcardNames, expand, seededRandom, slug } from "./lib/wildcards.js";
 import { fetchLook, draftCharacter, postFromGroups, sceneTags } from "./lib/booru.js";
-import { DEFAULT_COMFY, normalizeBase, originPattern, ping, findTab, queueGraph, applyInTab, bridgeCall, fetchLoras } from "./lib/comfy.js";
+import { DEFAULT_COMFY, normalizeBase, originPattern, ping, findTab, queueGraph, applyInTab, bridgeCall, fetchLoras, queueInTab } from "./lib/comfy.js";
 
 const hasChrome = typeof chrome !== "undefined" && chrome.storage && chrome.storage.local;
 const $ = (s, el = document) => el.querySelector(s);
@@ -28,7 +29,7 @@ const store = {
 
 let db;
 const ui = {
-  tab: "inbox", recipeId: null, openChar: null, openProfile: null, q: "", filter: "all", sort: "new", lightbox: null, diffId: null,
+  rolls: {}, tab: "inbox", recipeId: null, openChar: null, openProfile: null, q: "", filter: "all", sort: "new", lightbox: null, diffId: null,
   importId: null, sheet: null,
   comfyLive: false, comfyTab: null, bridge: null, syncedRev: -1, focus: null, pendingImport: null, rev: 0
 };
@@ -550,8 +551,9 @@ function drawBlocks(r) {
 
 function drawOutput(r) {
   const p = profileOf(r);
-  const out = render(r, p, db);
+  const out = finalOut(r);
   const issues = lint(r, p, db);
+  for (const n of new Set(wildcardNames(out.template + " " + (out.negative || "")))) if (!wildcardEntries(n)) issues.push(`__${n}__ doesn't match a snippet or snippet category`);
   let meter = "";
   if (p.clip) {
     const n = estimateClipTokens(out.positive);
@@ -563,6 +565,7 @@ function drawOutput(r) {
     <div class="tk-head"><span class="tag">Output · ${esc(p.label)}</span><span class="num">${esc(FORMAT_LABEL[p.format])}</span></div>
     <div class="out-label"><span>Positive</span><button class="link" data-act="copy-pos">Copy</button></div>
     <div class="out-text">${esc(out.positive) || '<span class="hint">Nothing yet</span>'}</div>
+    ${out.wild ? `<div class="wild-bar"><span class="kv">Wildcards · roll ${rollOf(r)}</span><button class="link" data-act="roll" data-d="-1" ${rollOf(r) > 1 ? "" : "hidden"}>← Back</button><button class="link" data-act="roll" data-d="1">Roll again</button><button class="link" data-act="copy-raw" title="Keep {a|b} and __name__ for Dynamic Prompts">Copy with wildcards</button></div>` : ""}
     ${meter}
     <div class="out-label"><span>Negative</span>${out.negative != null ? `<button class="link" data-act="copy-neg">Copy</button>` : ""}</div>
     ${out.negative == null ? `<div class="out-text muted">Not used by ${esc(p.label)}.</div>` : `<div class="out-text">${esc(out.negative)}</div>`}
@@ -577,6 +580,8 @@ function drawOutput(r) {
       <button class="btn ghost sm" data-act="comfy-node" title="Replaces the text of the node you have selected in ComfyUI">Selected node</button>
       ${r.comfy ? `<button class="btn ghost sm" data-act="send-comfy" title="Queues the graph saved in this recipe's PNG, with the current prompt">Queue saved graph</button>` : ""}
     </div>
+    ${out.wild ? `<div class="actions" style="margin-top:6px"><button class="btn ghost sm" data-act="queue-variants" title="Loads and queues several rolls on the same seed">Queue variants</button>
+      <select id="variant-count" aria-label="How many variants">${[2, 3, 4, 6].map((n) => `<option ${n === 3 ? "selected" : ""}>${n}</option>`).join("")}</select></div>` : ""}
   </section>`;
 }
 
@@ -690,9 +695,33 @@ const promptKey = (t) => String(t || "").replace(/\\([()])/g, "$1").toLowerCase(
 
 // Remember what was just sent out, so an image made from it finds its recipe.
 function noteSend(r, positive, reason = "sent") {
-  db.recentSends = [{ recipeId: r.id, key: promptKey(positive), at: Date.now() }, ...db.recentSends.filter((x) => x.recipeId !== r.id)].slice(0, 20);
+  const key = promptKey(positive);
+  db.recentSends = [{ recipeId: r.id, key, at: Date.now() }, ...db.recentSends.filter((x) => x.key !== key)].slice(0, 40);
   saveVersion(r, reason);
   persist();
+}
+
+// ---------- Wildcards ----------
+// __name__ matches a snippet by name (one of its tags) or a category (one of its snippets).
+function wildcardEntries(name) {
+  const n = slug(name);
+  const one = db.snippets.find((x) => slug(x.name) === n);
+  if (one) return one.tags.length ? one.tags : one.prose ? [one.prose] : null;
+  const cat = db.snippets.filter((x) => slug(x.cat) === n);
+  return cat.length ? cat.map((x) => (x.tags.length ? x.tags.join(", ") : x.prose)).filter(Boolean) : null;
+}
+const rollOf = (r) => ui.rolls[r.id] || 1;
+const expandText = (r, text, part, roll = rollOf(r)) => expand(text, seededRandom(`${r.id}:${roll}:${part}`), wildcardEntries);
+
+// The prompt as it leaves Prompto: rendered, then wildcards rolled.
+function finalOut(r, roll = rollOf(r)) {
+  const out = render(r, profileOf(r), db);
+  const wild = hasWildcards(out.positive) || hasWildcards(out.negative || "");
+  return {
+    ...out, wild, template: out.positive,
+    positive: wild ? expandText(r, out.positive, "pos", roll) : out.positive,
+    negative: out.negative != null && wild ? expandText(r, out.negative, "neg", roll) : out.negative
+  };
 }
 
 // ---------- Versions ----------
@@ -826,10 +855,35 @@ async function withComfyTab(payload, okLabel) {
   } catch { toast("Couldn't reach the ComfyUI tab. Check the address in Settings."); }
 }
 
+// Loads and queues several wildcard rolls on the same seed, one after another.
+async function queueVariants(r, count) {
+  if (!hasChrome) return toast("Load Prompto as an extension to reach ComfyUI");
+  const tab = await findTab(comfyBase());
+  if (!tab) return toast("Open ComfyUI in a browser tab first");
+  const start = rollOf(r);
+  saveVersion(r, `queued ${count} variants`);
+  let queued = 0;
+  for (let i = 0; i < count; i++) {
+    const out = finalOut(r, start + i);
+    const key = promptKey(out.positive);
+    db.recentSends = [{ recipeId: r.id, key, at: Date.now() }, ...db.recentSends.filter((x) => x.key !== key)].slice(0, 40);
+    try {
+      const res = await applyInTab(tab.id, { mode: "recipe", positive: out.positive, negative: out.negative, settings: r.settings });
+      if (!res || !res.ok) { toast((res && res.error) || "ComfyUI didn't respond"); break; }
+      const q = await queueInTab(tab.id);
+      if (!q || !q.ok) { toast((q && q.error) || "ComfyUI didn't queue it"); break; }
+      queued++;
+    } catch { toast("Couldn't reach the ComfyUI tab"); break; }
+  }
+  ui.rolls[r.id] = start + queued;
+  persist(); drawOutput(r); drawVersions(r);
+  if (queued) toast(`Queued ${queued} variant${queued > 1 ? "s" : ""} on seed ${r.settings.seed}`);
+}
+
 async function queueSaved(r) {
   if (!r.comfy || !r.comfy.pos) return toast("No ComfyUI graph yet. Import a ComfyUI PNG to attach one.");
   if (!ui.comfyLive) return toast(`ComfyUI isn't answering at ${comfyBase()}`);
-  const out = render(r, profileOf(r), db);
+  const out = finalOut(r);
   const graph = structuredClone(r.comfy.graph);
   graph[r.comfy.pos.id].inputs[r.comfy.pos.key] = out.positive;
   if (r.comfy.neg && out.negative != null) graph[r.comfy.neg.id].inputs[r.comfy.neg.key] = out.negative;
@@ -1250,16 +1304,19 @@ document.addEventListener("click", async (e) => {
       r.blocks.push({ type: $("#add-type").value, tags: [], prose: "" });
       refresh(r); $(`.chip-add[data-i="${r.blocks.length - 1}"]`)?.focus(); break;
     }
-    case "copy-pos": { const pos = render(r, profileOf(r), db).positive; noteSend(r, pos, "copied"); drawVersions(r); copy(pos, "Prompt copied"); break; }
-    case "copy-neg": copy(render(r, profileOf(r), db).negative || "", "Negative copied"); break;
-    case "copy-a1111": noteSend(r, render(r, profileOf(r), db).positive, "copied for Forge"); drawVersions(r); copy(toA1111(r, profileOf(r), db), "Copied. Paste it into Forge, then press ↙"); break;
+    case "copy-pos": { const pos = finalOut(r).positive; noteSend(r, pos, "copied"); drawVersions(r); copy(pos, "Prompt copied"); break; }
+    case "copy-raw": copy(finalOut(r).template, "Copied with wildcards"); break;
+    case "roll": ui.rolls[r.id] = Math.max(1, rollOf(r) + Number(el.dataset.d)); drawOutput(r); break;
+    case "queue-variants": return queueVariants(r, Number($("#variant-count").value));
+    case "copy-neg": copy(finalOut(r).negative || "", "Negative copied"); break;
+    case "copy-a1111": noteSend(r, finalOut(r).positive, "copied for Forge"); drawVersions(r); copy(toA1111(r, profileOf(r), db, (t, part) => (hasWildcards(t) ? expandText(r, t, part) : t)), "Copied. Paste it into Forge, then press ↙"); break;
     case "comfy-load": {
-      const out = render(r, profileOf(r), db);
+      const out = finalOut(r);
       noteSend(r, out.positive, "loaded into ComfyUI"); drawVersions(r);
       return withComfyTab({ mode: "recipe", positive: out.positive, negative: out.negative, settings: r.settings }, "Loaded");
     }
-    case "comfy-node": { const pos = render(r, profileOf(r), db).positive; noteSend(r, pos, "sent to a node"); drawVersions(r); return withComfyTab({ mode: "selected", text: pos, append: false }, "Sent"); }
-    case "send-comfy": noteSend(r, render(r, profileOf(r), db).positive, "queued"); drawVersions(r); return queueSaved(r);
+    case "comfy-node": { const pos = finalOut(r).positive; noteSend(r, pos, "sent to a node"); drawVersions(r); return withComfyTab({ mode: "selected", text: pos, append: false }, "Sent"); }
+    case "send-comfy": noteSend(r, finalOut(r).positive, "queued"); drawVersions(r); return queueSaved(r);
     case "lora-del": r.settings.loras.splice(Number(el.dataset.j), 1); persist(); $("#lora-edit").innerHTML = loraRows(r); drawOutput(r); break;
     case "ver-save": toast(saveVersion(r, "saved") ? "Version saved" : "Nothing changed since the last version"); persist(); drawVersions(r); break;
     case "ver-diff": ui.diffId = ui.diffId === el.dataset.v ? null : el.dataset.v; drawVersions(r); break;

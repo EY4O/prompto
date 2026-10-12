@@ -22,7 +22,7 @@ A Chrome side-panel extension for people who make images with Stable Diffusion, 
 - ✍️ **Prose from tags, no AI** — editable templates turn `1girl, silver hair, twin braids` into "a girl with long silver hair in twin braids" for prose models.
 - 🎭 **Characters from boorus** — a **+ Prompto** button on Danbooru, Gelbooru and Safebooru posts (and right-click on e621) learns a character's usual look from their solo posts and sorts the tags into appearance and outfit.
 - ⌨️ **Tag autocomplete** — suggestions from your own library, an imported Danbooru tag list (with post counts and aliases), and live Danbooru lookups.
-- 🎚️ **Prompt tools** — scroll over a tag to weight it, a CLIP token counter, and a checker for duplicates, contradictions and over-weighted tags.
+- 🎚️ **Prompt tools** — scroll over a tag to weight it, `{a|b}` and `__snippet__` wildcards with a roll button, a CLIP token counter, and a checker for duplicates, contradictions and over-weighted tags.
 - 🔗 **ComfyUI and Forge** — load a recipe, LoRAs included, straight into the open ComfyUI workflow, or copy it in Forge's format and fill in every setting with one click.
 - 💾 **Yours to keep** — everything stays in your browser, with JSON export and import. No account, and no AI.
 
@@ -159,6 +159,21 @@ A version is saved each time a recipe leaves Prompto (**Copy prompt**, **Copy fo
 | Danbooru | JSON API | Danbooru related tags |
 | Gelbooru, Safebooru | the tag list on the page (their APIs need accounts or don't give tag types) | Danbooru, by tag name; most names match, and Danbooru resolves common alternate spellings |
 | e621, e926 | JSON API, right-click only | this post only (e621 doesn't offer related tags without an account); species tags count as appearance |
+</details>
+
+<details>
+<summary><b>🎲 Wildcards and variations</b></summary>
+
+Use these anywhere in tags or prose:
+
+| Syntax | Becomes |
+|---|---|
+| `{red\|blue\|silver} eyes` | one of the options; options can nest, and an empty one means "nothing" |
+| `__hair_color__` | one tag from the snippet named **Hair color**, or one snippet from the category **Hair color** |
+
+The output card shows one roll of the prompt. **Roll again** and **← Back** step through rolls, which are repeatable: roll 3 is always the same roll 3 for that recipe. Copying, **Load into workflow** and **Copy for Forge** use the roll you see; **Copy with wildcards** keeps the syntax for tools like Dynamic Prompts. Names that don't match a snippet are flagged by the checker. Inside `{…}`, separate options with `|`, not commas.
+
+**Queue variants** loads and queues 2–6 rolls in the open ComfyUI tab, one after another, all on the recipe's seed, so you can compare them side by side. Each roll is remembered, so the images come back to the recipe's **Results**.
 </details>
 
 <details>

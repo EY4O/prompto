@@ -11,7 +11,7 @@ import { stamp, fingerprints, merge as mergeSync, toSyncFile, fromSyncFile, appl
 import * as syncfs from "./lib/syncfs.js";
 import { hasWildcards, wildcardNames, expand, seededRandom, slug } from "./lib/wildcards.js";
 import { fetchLook, draftCharacter, postFromGroups, sceneTags } from "./lib/booru.js";
-import { DEFAULT_COMFY, normalizeBase, originPattern, ping, findTab, queueGraph, applyInTab, bridgeCall, fetchLoras, queueInTab } from "./lib/comfy.js";
+import { DEFAULT_COMFY, normalizeBase, originPattern, ping, findTabs, queueGraph, applyInTab, bridgeCall, fetchLoras, queueInTab } from "./lib/comfy.js";
 
 const hasChrome = typeof chrome !== "undefined" && chrome.storage && chrome.storage.local;
 const $ = (s, el = document) => el.querySelector(s);
@@ -1123,10 +1123,15 @@ function drawLightbox() {
 
 // ---------- ComfyUI ----------
 const comfyBase = () => db.settings.comfyUrl || DEFAULT_COMFY;
+// The tab the heartbeat linked to (it has the bridge), else any ComfyUI tab.
+async function comfyTab() {
+  const tabs = await findTabs(comfyBase());
+  return tabs.find((t) => ui.comfyTab && t.id === ui.comfyTab.id) || tabs[0] || null;
+}
 
 async function withComfyTab(payload, okLabel) {
   if (!hasChrome) return toast("Load Prompto as an extension to reach ComfyUI");
-  const tab = await findTab(comfyBase());
+  const tab = await comfyTab();
   if (!tab) return toast("Open ComfyUI in a browser tab first");
   try {
     const res = await applyInTab(tab.id, payload);
@@ -1137,7 +1142,7 @@ async function withComfyTab(payload, okLabel) {
 // Loads and queues several wildcard rolls on the same seed, one after another.
 async function queueVariants(r, count) {
   if (!hasChrome) return toast("Load Prompto as an extension to reach ComfyUI");
-  const tab = await findTab(comfyBase());
+  const tab = await comfyTab();
   if (!tab) return toast("Open ComfyUI in a browser tab first");
   const start = rollOf(r);
   saveVersion(r, `queued ${count} variants`);
@@ -1204,14 +1209,14 @@ function captureToInbox(cap) {
 // With the ComfyUI-Prompto extension installed: push the library, collect captures.
 async function syncBridge(tab) {
   ui.bridge = (await bridgeCall(tab.id, "info").catch(() => null))?.version || null;
-  if (!ui.bridge) return;
+  if (!ui.bridge) return false;
   if (ui.syncedRev !== ui.rev) {
     const rev = ui.rev;
     const ok = await bridgeCall(tab.id, "syncLibrary", [snapshot()]).catch(() => null);
     if (ok && ok.ok) ui.syncedRev = rev;
   }
   const caps = await bridgeCall(tab.id, "takeCaptures").catch(() => null);
-  if (!Array.isArray(caps) || !caps.length) return;
+  if (!Array.isArray(caps) || !caps.length) return true;
   const have = new Set(db.inbox.map((i) => i.id));
   const fresh = [], filed = new Set();
   for (const item of caps.map(captureToInbox)) {
@@ -1233,6 +1238,7 @@ async function syncBridge(tab) {
     toast(fresh.length === 1 ? "New capture from ComfyUI" : `${fresh.length} captures from ComfyUI`);
     if (ui.tab === "inbox" && !ui.recipeId) draw(); else $("#count-inbox").textContent = db.inbox.length;
   }
+  return true;
 }
 
 let beating = false;
@@ -1254,9 +1260,14 @@ async function refreshLoras(tab, announce) {
 
 async function beat() {
   const base = comfyBase();
-  const [live, tab] = await Promise.all([ping(base), findTab(base)]);
+  const [live, tabs] = await Promise.all([ping(base), findTabs(base)]);
   const hadBridge = ui.bridge;
-  if (tab) await syncBridge(tab).catch(() => {}); else ui.bridge = null;
+  // Use the first tab with the bridge; a tab still loading or showing an error page has none.
+  let tab = tabs[0] || null;
+  ui.bridge = null;
+  for (const t of tabs) {
+    if (await syncBridge(t).catch(() => false)) { tab = t; break; }
+  }
   const list = db.settings.loraList;
   if ((tab || live) && (!list || Date.now() - list.at > 10 * 60e3)) refreshLoras(tab).catch(() => {});
   const changed = live !== ui.comfyLive || !!tab !== !!ui.comfyTab || hadBridge !== ui.bridge;

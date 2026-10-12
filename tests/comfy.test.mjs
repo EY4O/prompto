@@ -1,6 +1,6 @@
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { comfyApply, parseLoraList, normalizeBase, originPattern, DEFAULT_COMFY } from "../lib/comfy.js";
+import { comfyApply, parseLoraList, normalizeBase, originPattern, findTabs, DEFAULT_COMFY } from "../lib/comfy.js";
 
 // ---------- a tiny LiteGraph stand-in ----------
 const widget = (name, value, extra = {}) => ({
@@ -236,5 +236,22 @@ describe("helpers", () => {
   test("originPattern covers every port on the host", () => {
     assert.equal(originPattern("http://127.0.0.1:8188"), "http://127.0.0.1/*");
     assert.equal(originPattern("https://comfy.example.com"), "https://comfy.example.com/*");
+  });
+});
+
+describe("findTabs", () => {
+  afterEach(() => { delete globalThis.chrome; });
+
+  test("lists only tabs at this address, the active one first", async () => {
+    globalThis.chrome = { tabs: { query: async () => [
+      { id: 1, url: "http://127.0.0.1:8188/", active: false },
+      { id: 2, url: "http://127.0.0.1:8000/", active: true },
+      { id: 3, url: "http://127.0.0.1:8188/?x", active: true }
+    ] } };
+    assert.deepEqual((await findTabs("http://127.0.0.1:8188")).map((t) => t.id), [3, 1]);
+  });
+
+  test("no tabs API means no tabs", async () => {
+    assert.deepEqual(await findTabs(DEFAULT_COMFY), []);
   });
 });

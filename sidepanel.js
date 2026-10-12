@@ -3,6 +3,7 @@ import { DEFAULT_TEMPLATES, SLOT_HELP, proseFromTags } from "./lib/prose.js";
 import { readRecipeFromFile, parseComfy } from "./lib/pngmeta.js";
 import { fromMeta as toRecipe1 } from "./lib/recipe1.js";
 import { SEED } from "./lib/seed.js";
+import { removeCharacter } from "./lib/cast.js";
 import { loadTagList, importTagCsv, clearTagList, tagListInfo, searchLocal, libraryTags, searchLibrary, searchDanbooru } from "./lib/tags.js";
 import { attachAutocomplete } from "./lib/autocomplete.js";
 import { tagDiff, wordDiff, settingsDiff, changed } from "./lib/diff.js";
@@ -1345,7 +1346,7 @@ function castTicket(c, i) {
     <div class="tk-tear"></div>
     <div class="tk-stub">
       <div><p>${c.lora ? esc(c.lora.name) : "No LoRA"}</p><p class="mono">${c.lora ? "weight " + c.lora.w : "tags only"}</p></div>
-      <span class="row"><button class="link" data-act="share-cast" data-c="${c.id}">Share</button><button class="link" data-act="cast-toggle" data-c="${c.id}">${open ? "Done" : "Edit"}</button></span>
+      <span class="row">${open ? `<button class="link" data-act="cast-del" data-c="${c.id}">Delete</button>` : ""}<button class="link" data-act="share-cast" data-c="${c.id}">Share</button><button class="link" data-act="cast-toggle" data-c="${c.id}">${open ? "Done" : "Edit"}</button></span>
     </div>
   </article>`;
 }
@@ -1794,6 +1795,16 @@ document.addEventListener("click", async (e) => {
       break;
     }
     case "cast-toggle": ui.openChar = ui.openChar === el.dataset.c ? null : el.dataset.c; draw(); break;
+    case "cast-del": {
+      if (!armed(el, "Press again to delete")) return;
+      const res = removeCharacter(db, el.dataset.c);
+      if (!res) return;
+      if (ui.openChar === res.character.id) ui.openChar = null;
+      const n = res.recipes.length;
+      persist();
+      toast(`Deleted ${res.character.name}` + (n ? ` · removed from ${n} recipe${n > 1 ? "s" : ""}` : ""));
+      go("characters"); break;
+    }
     case "cast-recipe": {
       const c = charById(el.dataset.c);
       const n = newRecipe();

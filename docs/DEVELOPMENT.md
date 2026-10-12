@@ -57,6 +57,7 @@ node --test
 | `booru`, `civitai` | post and image parsing, character looks, tag sorting, sampler mapping |
 | `tags`, `wildcards`, `diff`, `importers`, `sync` | tag lists, wildcard rolls, version diffs, other tools' files, sync merging |
 | `comfy`, `card`, `seed` | loading into a mock ComfyUI graph, share-card chunks, sample data |
+| `cast` | deleting a cast member and the recipe blocks that used them |
 
 GitHub Actions runs the same command on every push (`.github/workflows/test.yml`).
 

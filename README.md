@@ -89,7 +89,7 @@ Install **[ComfyUI-Prompto](https://github.com/EY4O/ComfyUI-Prompto)** in ComfyU
 <details>
 <summary><b>🧱 Blocks and model profiles</b></summary>
 
-A recipe is a list of blocks: subject, character, outfit, pose, scene, lighting, camera and style. Each block holds tags (`twin braids, red eyes`) and an optional prose line ("a young woman with silver hair in twin braids"). A character block points at a cast member, so editing the character updates every recipe that uses them.
+A recipe is a list of blocks: subject, character, outfit, pose, scene, lighting, camera and style. Each block holds tags (`twin braids, red eyes`) and an optional prose line ("a young woman with silver hair in twin braids"). A character block points at a cast member, so editing the character updates every recipe that uses them. Deleting one (**Edit** → **Delete** on its card, pressed twice) also removes it from those recipes.
 
 A **model profile** decides how the blocks become a prompt:
 

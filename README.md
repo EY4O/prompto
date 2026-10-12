@@ -1,0 +1,181 @@
+<h1 align="center">Prompto</h1>
+
+<p align="center"><b>Catch prompts, tags and characters wherever you find them, and turn them into prompts for any model.</b></p>
+
+<p align="center">
+  <a href="https://github.com/EY4O/prompto/blob/main/LICENSE"><img src="https://img.shields.io/github/license/EY4O/prompto?color=blue" alt="License"></a>
+  <a href="https://github.com/EY4O/prompto/commits/main"><img src="https://img.shields.io/github/last-commit/EY4O/prompto?color=green&logo=github" alt="Last commit"></a>
+  <a href="https://ko-fi.com/looneth"><img src="https://img.shields.io/badge/Ko--fi-Support-FF813F?logo=ko-fi&logoColor=white" alt="Support on Ko-fi"></a>
+</p>
+
+A Chrome side-panel extension for people who make images with Stable Diffusion, Illustrious, Flux and Qwen. It's a home for the ideas you run into while browsing: tags from a Reddit thread, a character from Danbooru, the settings inside a PNG someone shared. Ideas land in an inbox, become reusable recipes, characters and snippets, and come out as the right prompt for whichever model you're using, as booru tags, natural language or both. It works without ComfyUI running, and connects to ComfyUI or Forge when you want it to. Open it from the toolbar icon or with **Alt+Shift+P**.
+
+![Prompto's recipe editor and its prompt output](docs/images/hero.png)
+
+---
+
+## ✨ Key Features
+
+- 📥 **Inbox for everything** — right-click text, an image or a booru post; type `p` and a space in the address bar; or drop a PNG on the panel.
+- 🧬 **Recipes from PNGs** — reads the prompt, negative, model, LoRAs, sampler, steps and seed that ComfyUI and A1111/Forge save inside their images.
+- 🧱 **One recipe, every model** — a recipe is made of blocks (subject, character, pose, scene, lighting…) with tags and prose side by side, and model profiles turn it into the right prompt for Illustrious, Anima, Flux Krea or Qwen Image.
+- 🎭 **Characters from Danbooru** — a **+ Prompto** button on Danbooru posts learns a character's usual look from their solo posts and sorts the tags into appearance and outfit.
+- ⌨️ **Tag autocomplete** — suggestions from your own library, an imported Danbooru tag list (with post counts and aliases), and live Danbooru lookups.
+- 🎚️ **Prompt tools** — scroll over a tag to weight it, a CLIP token counter, and a checker for duplicates, contradictions and over-weighted tags.
+- 🔗 **ComfyUI and Forge** — load a recipe straight into the open ComfyUI workflow, or copy it in Forge's format and fill in every setting with one click.
+- 💾 **Yours to keep** — everything stays in your browser, with JSON export and import. No account, and no AI.
+
+## 📸 Screenshots
+
+| | |
+|---|---|
+| ![Inbox](docs/images/inbox.png) **Inbox** — captures wait here until you file them as recipes, snippets or cast | ![Danbooru import](docs/images/import.png) **Danbooru import** — each character's look, with how often each tag appears on their posts |
+| ![Cast](docs/images/cast.png) **Cast** — reusable characters with outfits, trigger words and LoRAs | ![Profiles](docs/images/profiles.png) **Profiles** — decide how each model's prompt is written: tags or prose, quality tags, negatives |
+
+<sub>Screenshots use sample data. The Danbooru post's artwork is hidden.</sub>
+
+---
+
+## 📦 Installation
+
+Prompto isn't on the Chrome Web Store yet, so it's loaded as an unpacked extension.
+
+### Option 1: **Clone and load unpacked** (Recommended)
+
+```bash
+git clone https://github.com/EY4O/prompto.git
+```
+
+1. Open `chrome://extensions` and turn on **Developer mode** (top right).
+2. Click **Load unpacked** and pick the `prompto` folder.
+3. Pin Prompto from the extensions menu so its icon stays in the toolbar.
+
+To update later, `git pull` and press the reload arrow on Prompto's card in `chrome://extensions`.
+
+### Option 2: **Download ZIP**
+
+Download the repository as a ZIP from GitHub, unzip it somewhere permanent, then follow steps 1–3 above. Chrome loads the extension from that folder, so don't delete it.
+
+<details>
+<summary><b>ComfyUI companion (optional)</b></summary>
+
+Install **[ComfyUI-Prompto](https://github.com/EY4O/ComfyUI-Prompto)** in ComfyUI's `custom_nodes` for a Prompto sidebar inside ComfyUI, right-click **Save to Prompto** on nodes and images, and optional auto-capture of saved images. Prompto works without it, but loading recipes into a workflow is more reliable with it installed.
+</details>
+
+## 🚀 Getting Started
+
+1. Click the Prompto icon (or press **Alt+Shift+P**) to open the side panel. It starts with sample data you can remove later in **Settings → Library → Remove sample items**.
+2. Capture something: right-click some tags on a page → **Save to Prompto**, or drop a ComfyUI PNG on the panel. It appears in the **Inbox**.
+3. Press **File as → Recipe**. Pick a model profile at the top and adjust the blocks. The output card updates as you go.
+4. Press **Copy prompt**, **Copy for Forge**, or, with ComfyUI open in a tab, **Load into workflow**.
+5. On a Danbooru post, press **+ Prompto** next to a character tag, check the sorted tags, and press **File to cast**.
+6. Optional: import a Danbooru tag list in **Settings → Tag autocomplete** for suggestions with post counts.
+
+---
+
+## 📖 How It Works
+
+<details>
+<summary><b>🧱 Blocks and model profiles</b></summary>
+
+A recipe is a list of blocks: subject, character, outfit, pose, scene, lighting, camera and style. Each block holds tags (`twin braids, red eyes`) and an optional prose line ("a young woman with silver hair in twin braids"). A character block points at a cast member, so editing the character updates every recipe that uses them.
+
+A **model profile** decides how the blocks become a prompt:
+
+| Setting | What it does |
+|---|---|
+| Output | **Tags** (comma-separated), **Prose** (sentences), or **Tags + prose** |
+| Weights | Writes `(tag:1.2)` when on; the checker warns when a profile ignores weights |
+| Token counter | Shows an approximate CLIP token count and how many 75-token chunks it uses |
+| Quality tags | Added first in tag output, e.g. `masterpiece, best quality` |
+| Default negative | Used unless the recipe has its own; can be turned off (Flux Krea runs at CFG 1) |
+
+The four starting profiles (Illustrious, Anima, Flux Krea, Qwen Image) are suggestions. Edit them, duplicate them, or add your own in **Settings → Model profiles**, and **Reset** restores a starting profile. When a block has no prose, prose output uses its tags as written, and the checker says so.
+</details>
+
+<details>
+<summary><b>🖼️ Reading PNGs</b></summary>
+
+ComfyUI stores the queued graph in a PNG text chunk called `prompt`. A1111 and Forge store a `parameters` text block. Prompto reads either one:
+
+- **ComfyUI**: it follows the sampler's positive and negative inputs back to the text nodes, including through ControlNet and Flux guidance nodes, and collects the model, LoRAs, sampler, scheduler, steps, CFG, seed and size. The graph is kept, so **Queue saved graph** can run it again with your edited prompt.
+- **A1111/Forge**: it splits out the negative prompt and settings line, and pulls `<lora:…>` tags out of the prompt.
+
+Images without generation data are kept as reference images.
+</details>
+
+<details>
+<summary><b>🎭 Danbooru character import</b></summary>
+
+- Posts are read through Danbooru's JSON API (`/posts/{id}.json`), so tags arrive already split into character, series, artist and general.
+- A character's look comes from Danbooru's related tags for that character on **solo, general-rated** posts. Tags found on at least 40% of those posts are suggested; tags at 25–40% are shown under **Skip** so you can promote them. Characters with fewer than 25 solo posts use all their posts instead.
+- When a post has several characters, each of the post's tags goes to whichever character Danbooru links it to most strongly, so one character doesn't get another's hair colour.
+- Tags are sorted by simple word rules (hair, eyes, ears → appearance; dress, gloves, earrings → outfit; scene and framing → skip). Click any tag to move it.
+- If the character is already in your cast, you can add the post's clothes as a new outfit instead of making a duplicate.
+- Looks are cached for a week. Gelbooru posts are read from the page, and their characters are looked up on Danbooru by name.
+</details>
+
+<details>
+<summary><b>⌨️ Tag autocomplete</b></summary>
+
+Every **+ tags** field suggests tags from three places, in this order:
+
+1. **Your tags**: anything already used in your recipes, cast, snippets and profiles.
+2. **An imported tag list**: a CSV in the [a1111 tag-autocomplete](https://github.com/DominikDoom/a1111-sd-webui-tagcomplete) format (`name,category,post count,"aliases"`). It's kept in IndexedDB on your device and matches tag starts, word starts and aliases.
+3. **Danbooru**: when the list has fewer than five matches, Prompto asks Danbooru's tag API. You can turn this off in **Settings**.
+
+Underscores become spaces, except in emoticons such as `^_^`.
+</details>
+
+<details>
+<summary><b>🔗 Connecting to ComfyUI</b></summary>
+
+- Prompto checks the ComfyUI address in **Settings** every few seconds (default `http://127.0.0.1:8188`). The header shows **offline**, **live**, **tab open** or **linked**.
+- **Load into workflow** and **Selected node** edit the workflow in your open ComfyUI tab. Settings go to the first sampler, so a hires-fix pass keeps its own steps, and dropdown values are only set when ComfyUI offers them. LoRAs aren't applied yet.
+- With **ComfyUI-Prompto** installed, Prompto works through its bridge instead of ComfyUI's internals, syncs your library to the ComfyUI sidebar, and collects captures from ComfyUI.
+- Recent ComfyUI versions turn away requests that come straight from extensions. That's why Prompto goes through the open tab. **Queue saved graph** calls the API directly and may need ComfyUI started with `--enable-cors-header`.
+- The ComfyUI desktop app isn't a browser tab, so only **Queue saved graph** works with it.
+</details>
+
+<details>
+<summary><b>💾 Data and permissions</b></summary>
+
+- Your library lives in `chrome.storage.local`; the imported tag list lives in IndexedDB. Use **Settings → Library → Export** for a backup. The tag list isn't included.
+- Network requests go only to Danbooru (posts, related tags and optional tag lookups), your ComfyUI address, and Google Fonts for the panel's typefaces.
+- Permissions: **side panel**, **storage** and **unlimited storage** for the library and images; **context menus** for right-click capture; **scripting** and **active tab** to read booru pages and reach the ComfyUI tab; access to `localhost`/`127.0.0.1` (ComfyUI) and `*.donmai.us` (Danbooru). Other ComfyUI addresses are requested when you save them.
+- Prompto never queues anything on its own. Deleting a recipe, profile or tag list takes a second press to confirm.
+</details>
+
+---
+
+## 🧪 Development
+
+Running from source, project layout and releasing are described in **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**.
+
+## 🗺️ Roadmap
+
+- An icon and a Chrome Web Store listing.
+- Apply LoRAs when loading a recipe into ComfyUI.
+- Bundle the fonts so the panel looks right offline.
+
+## 🤝 Contributing
+
+Issues and pull requests are welcome. Please describe how you tested a change, since there's no automated test suite yet.
+
+## 🙏 Credits
+
+- [Danbooru](https://danbooru.donmai.us/wiki_pages/help:api): the post, related-tag and tag APIs behind character import and autocomplete
+- [a1111-sd-webui-tagcomplete](https://github.com/DominikDoom/a1111-sd-webui-tagcomplete): the tag-list CSV format
+- [ComfyUI](https://github.com/comfyanonymous/ComfyUI): workflow metadata and the API Prompto talks to
+- [Oswald](https://fonts.google.com/specimen/Oswald) and [IBM Plex Mono](https://fonts.google.com/specimen/IBM+Plex+Mono): typefaces
+- The holographic ticket look is adapted from an [Instalanding](https://instalanding.ai/demos/murmur-swarm-tickets.html) demo (MIT)
+
+## ☕ Support
+
+If Prompto keeps your favourite prompts and characters one click away, you can support its development:
+
+[![Support me on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/looneth)
+
+## 📄 License
+
+[MIT](LICENSE)

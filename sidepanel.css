@@ -260,7 +260,7 @@ button.chip:hover, .chip.edit:hover { border-color: var(--line-2); }
 /* ---------- Recipe editor ---------- */
 .backbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .title-input { width: 100%; border: 0; background: none; outline: none; font-size: 30px; line-height: 0.95; font-weight: 700; text-transform: uppercase; letter-spacing: -1px; margin-top: 10px; }
-.profiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 4px; margin-top: 12px; }
+.profiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 4px; margin-top: 12px; }
 .profiles button { border: 1px solid var(--line-2); border-radius: 8px; padding: 6px 4px 5px; text-align: left; transition: all 0.3s; }
 .profiles button b { display: block; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: -0.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .profiles button small { display: block; font-size: 9.5px; text-transform: uppercase; color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -1185,7 +1185,9 @@ function snapshot() {
     snippets: db.snippets.map(({ id, cat, name, tags, prose }) => ({ id, cat, name, tags, prose })),
     cast: db.characters.map((c) => ({
       id: c.id, name: c.name, series: c.series, tags: [c.trigger, ...c.appearance].filter(Boolean), prose: c.prose,
-      outfits: Object.entries(c.outfits).map(([name, o]) => ({ name, tags: o.tags, prose: o.prose }))
+      // Drafted prose too, so the Prompto Character node can write prose for any cast member.
+      proseDraft: c.prose ? "" : castDraft(c),
+      outfits: Object.entries(c.outfits).map(([name, o]) => ({ name, tags: o.tags, prose: o.prose, proseDraft: o.prose ? "" : castDraft(c, name) }))
     }))
   };
 }

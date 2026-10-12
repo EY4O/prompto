@@ -38,13 +38,22 @@ For quick UI work you can also serve the folder (for example `python -m http.ser
 
 ## Tests
 
-There's no automated suite yet. The parsing and rendering modules (`lib/render.js`, `lib/pngmeta.js`, `lib/booru.js`) have no DOM dependencies and can be exercised from Node 18+:
+Node 18+ and nothing else: the suites use Node's built-in test runner and never touch the network (fetches are stubbed).
 
 ```
-node -e "import('./lib/render.js').then(m => console.log(Object.keys(m.DEFAULT_PROFILES)))"
+node --test
 ```
 
-Danbooru and e621 reject Node's default fetch, so pass a `User-Agent` header (Danbooru) or feed saved JSON from `curl` (e621) when testing from Node.
+| Suite | Covers |
+|---|---|
+| `render` | profiles (tags, prose, both), weights, negatives, character and outfit blocks, drafted prose, the checker, Forge export, tag parsing |
+| `prose` | tags → prose drafts: hair, eyes, count and age, species, scenes, templates |
+| `pngmeta` | PNG text chunks (tEXt, zTXt, iTXt), ComfyUI graphs (ControlNet, Flux), A1111 parameters |
+| `booru`, `civitai` | post and image parsing, character looks, tag sorting, sampler mapping |
+| `tags`, `wildcards`, `diff`, `importers`, `sync` | tag lists, wildcard rolls, version diffs, other tools' files, sync merging |
+| `comfy`, `card`, `seed` | loading into a mock ComfyUI graph, share-card chunks, sample data |
+
+GitHub Actions runs the same command on every push (`.github/workflows/test.yml`).
 
 ## Icons
 

@@ -293,7 +293,7 @@ Running from source, project layout and releasing are described in **[docs/DEVEL
 
 ## 🤝 Contributing
 
-Issues and pull requests are welcome. Please describe how you tested a change, since there's no automated test suite yet.
+Issues and pull requests are welcome. Please run `node --test` before opening a PR.
 
 ## 🙏 Credits
 

@@ -24,7 +24,7 @@ A Chrome side-panel extension for people who make images with Stable Diffusion, 
 - ⌨️ **Tag autocomplete** — suggestions from your own library, an imported Danbooru tag list (with post counts and aliases), and live Danbooru lookups.
 - 🎚️ **Prompt tools** — scroll over a tag to weight it, `{a|b}` and `__snippet__` wildcards with a roll button, a CLIP token counter, and a checker for duplicates, contradictions and over-weighted tags.
 - 🔗 **ComfyUI and Forge** — load a recipe, LoRAs included, straight into the open ComfyUI workflow, or copy it in Forge's format and fill in every setting with one click.
-- 💾 **Yours to keep** — everything stays in your browser, with JSON export and import. No account, and no AI.
+- 💾 **Yours to keep and share** — everything stays in your browser, with JSON backups and PNG share cards that carry a recipe or character to someone else's Prompto. No account, and no AI.
 
 ## 📸 Screenshots
 
@@ -142,6 +142,20 @@ Click a result to open it larger, rate it, make it the recipe's cover, or copy i
 A version is saved each time a recipe leaves Prompto (**Copy prompt**, **Copy for Forge**, **Load into workflow**, **Selected node**, **Queue saved graph**) and when you press **Save version**, as long as something changed. Each recipe keeps its last 30.
 
 **Compare** shows what changed between that version and now: tag by tag for tag prompts, word by word for prose, plus any changed settings. **Restore** brings a version back, after first saving the current state as **before restore**.
+</details>
+
+<details>
+<summary><b>🎟️ Share cards</b></summary>
+
+**Share card** on a recipe, or **Share** on a cast member, saves a PNG drawn as a Prompto ticket. The picture shows the title, cover, prompt and settings; the file also carries the data:
+
+| Text chunk | Read by | Holds |
+|---|---|---|
+| `prompto` | Prompto | the recipe with its cast members and model profile, or the cast member |
+| `parameters` | Forge, A1111 and anything that reads their format | the prompt, negative and settings, with wildcards rolled |
+| `prompt` | ComfyUI | the recipe's ComfyUI graph with the current prompt, when it has one |
+
+Drop a card on Prompto and it appears in the inbox as a **Prompto card**; **Import** adds it. Characters on a card are matched to your cast by trigger word (or name), so a shared recipe uses your existing Rin instead of a duplicate; new outfits and tags are merged in. Cards leave out results, versions and reference images. A cover image from another site can only be drawn if that site allows it; otherwise the card has no cover.
 </details>
 
 <details>

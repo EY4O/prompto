@@ -5,6 +5,7 @@ import { SEED } from "./lib/seed.js";
 import { loadTagList, importTagCsv, clearTagList, tagListInfo, searchLocal, libraryTags, searchLibrary, searchDanbooru } from "./lib/tags.js";
 import { attachAutocomplete } from "./lib/autocomplete.js";
 import { tagDiff, wordDiff, settingsDiff, changed } from "./lib/diff.js";
+import { cardPng, asciiJson } from "./lib/card.js";
 import { hasWildcards, wildcardNames, expand, seededRandom, slug } from "./lib/wildcards.js";
 import { fetchLook, draftCharacter, postFromGroups, sceneTags } from "./lib/booru.js";
 import { DEFAULT_COMFY, normalizeBase, originPattern, ping, findTab, queueGraph, applyInTab, bridgeCall, fetchLoras, queueInTab } from "./lib/comfy.js";
@@ -191,6 +192,13 @@ function slip(item) {
     const match = matchRecipe(item.meta.positive);
     if (match) body += `<p class="slip-match">Same prompt as <b>${esc(match.title)}</b></p>`;
     files = match && item.thumb ? [["results", "Results"], ["recipe", "Recipe"]] : [["recipe", "Recipe"]];
+  } else if (item.kind === "card") {
+    label = "Prompto card";
+    const d = item.data;
+    const what = d.kind === "cast" ? `Cast · ${d.character.name}` : `Recipe · ${d.recipe.title}`;
+    body = `${item.thumb ? `<img class="slip-thumb" src="${esc(item.thumb)}" alt="">` : ""}<p class="slip-text">${esc(what)}</p>
+      ${d.kind === "recipe" && d.cast && d.cast.length ? `<p class="kv" style="margin-top:4px">with ${esc(d.cast.map((c) => c.name).join(", "))}</p>` : ""}`;
+    files = [["card", "Import"]];
   } else if (item.kind === "image") {
     body = `<img class="slip-thumb" src="${esc(item.image)}" alt="">${item.note ? `<p class="hint" style="margin-top:6px">${esc(item.note)}</p>` : ""}`;
     files = db.characters.length ? [["recipe", "Recipe"], ["reference", "Reference…"]] : [["recipe", "Recipe"]];
@@ -249,6 +257,7 @@ function fileItem(id, as) {
   const item = db.inbox.find((i) => i.id === id);
   if (!item) return;
   const done = () => { db.inbox = db.inbox.filter((i) => i.id !== id); persist(); };
+  if (as === "card") return importCard(item);
   if (as === "reference") { ui.refPick = ui.refPick === id ? null : id; return draw(); }
   if (as === "results") {
     const r = matchRecipe(item.meta.positive);
@@ -465,7 +474,10 @@ async function handleFiles(files) {
     const meta = file.type === "image/png" ? await readRecipeFromFile(file) : null;
     const thumb = await makeThumb(file);
     saved++;
-    if (meta && meta.format !== "none") {
+    if (meta && meta.format === "prompto" && meta.data && meta.data.app === "prompto") {
+      db.inbox.unshift({ id: uid("in"), kind: "card", data: meta.data, title: file.name, source: file.name, createdAt: Date.now(), thumb });
+      read++;
+    } else if (meta && meta.format !== "none") {
       db.inbox.unshift({ id: uid("in"), kind: "png", format: meta.format, title: file.name, source: file.name, createdAt: Date.now(), thumb, meta });
       read++;
     } else {
@@ -605,6 +617,7 @@ function drawRecipe() {
       <a class="link" href="#recipes">← Recipes</a>
       <div class="row">
         <button class="link" data-act="fav">${r.fav ? "Unstar" : "Star"}</button>
+        <button class="link" data-act="share-recipe" title="Save this recipe as a PNG card others can drop on Prompto, Forge or ComfyUI">Share card</button>
         <button class="link" data-act="dup">Duplicate</button>
         <button class="link" data-act="del-recipe">Delete</button>
       </div>
@@ -732,6 +745,92 @@ function finalOut(r, roll = rollOf(r)) {
     positive: wild ? expandText(r, out.positive, "pos", roll) : out.positive,
     negative: out.negative != null && wild ? expandText(r, out.negative, "neg", roll) : out.negative
   };
+}
+
+// ---------- Share cards ----------
+const stripCast = (c) => ({ ...structuredClone({ ...c, refs: [], image: null }) });
+const fileSlug = (s) => slug(s) || "prompto";
+
+function downloadBytes(bytes, name) {
+  const url = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+async function shareRecipe(r) {
+  const p = profileOf(r);
+  const out = finalOut(r);
+  const s = r.settings;
+  const cast = r.blocks.filter((b) => b.type === "character" && charById(b.ref)).map((b) => stripCast(charById(b.ref)));
+  const recipe = structuredClone({ ...r, runs: [], versions: [], image: null, coverId: null });
+  const payload = { app: "prompto", kind: "recipe", version: 1, recipe, cast, profile: p };
+  // A recipe with a ComfyUI graph also opens in ComfyUI.
+  let graph = null;
+  if (r.comfy && r.comfy.pos) {
+    graph = structuredClone(r.comfy.graph);
+    graph[r.comfy.pos.id].inputs[r.comfy.pos.key] = out.positive;
+    if (r.comfy.neg && out.negative != null) graph[r.comfy.neg.id].inputs[r.comfy.neg.key] = out.negative;
+  }
+  const bytes = await cardPng({
+    tag: p.label, no: "No. " + pad(r.no), mark: pad(r.no, 2), title: r.title, cover: r.image, stock: huesOf(p), seed: r.id,
+    lines: [{ label: "Positive", text: out.positive, max: 10 }, ...(out.negative ? [{ label: "Negative", text: out.negative, max: 3 }] : [])],
+    footer: [s.width && `${s.width}×${s.height}`, s.steps && `${s.steps} steps`, s.cfg != null && `CFG ${s.cfg}`, s.seed != null && `seed ${s.seed}`, (s.loras || []).length && `${s.loras.length} LoRA${s.loras.length > 1 ? "s" : ""}`].filter(Boolean).join(" · ")
+  }, {
+    prompto: asciiJson(payload),
+    parameters: toA1111(r, p, db, (t, part) => (hasWildcards(t) ? expandText(r, t, part) : t)),
+    prompt: graph ? asciiJson(graph) : null
+  });
+  downloadBytes(bytes, `${fileSlug(r.title)}.prompto.png`);
+  toast("Card saved");
+}
+
+async function shareCast(c) {
+  const outfits = Object.entries(c.outfits);
+  const bytes = await cardPng({
+    tag: c.series || "Cast", no: c.trigger ? "trigger " + c.trigger : "", mark: initials(c.name), title: c.name, cover: c.image, stock: "", seed: c.id,
+    lines: [
+      { label: "Appearance", text: c.appearance.join(", "), max: 4 },
+      ...outfits.slice(0, 3).map(([o, v]) => ({ label: "Outfit · " + o, text: v.tags.join(", "), max: 2 })),
+      ...(c.prose ? [{ label: "Prose", text: c.prose, max: 3 }] : [])
+    ],
+    footer: [c.lora && `LoRA ${loraLabel(c.lora.name)} at ${c.lora.w}`, outfits.length && `${outfits.length} outfit${outfits.length > 1 ? "s" : ""}`].filter(Boolean).join(" · ") || "Reusable character"
+  }, { prompto: asciiJson({ app: "prompto", kind: "cast", version: 1, character: stripCast(c) }) });
+  downloadBytes(bytes, `${fileSlug(c.name)}.prompto.png`);
+  toast("Card saved");
+}
+
+// Adds a card's cast member, or merges it into the one with the same trigger.
+function mergeCast(incoming) {
+  const existing = (incoming.trigger && castByTrigger(incoming.trigger)) || db.characters.find((c) => c.name === incoming.name);
+  if (existing) {
+    for (const t of incoming.appearance || []) if (!existing.appearance.includes(t)) existing.appearance.push(t);
+    for (const [o, v] of Object.entries(incoming.outfits || {})) if (!existing.outfits[o]) existing.outfits[o] = v;
+    if (!existing.prose && incoming.prose) existing.prose = incoming.prose;
+    if (!existing.lora && incoming.lora) existing.lora = incoming.lora;
+    return existing.id;
+  }
+  const c = { ...incoming, id: uid("chr"), refs: [], image: null };
+  db.characters.unshift(c);
+  return c.id;
+}
+
+function importCard(item) {
+  const d = item.data;
+  const done = () => { db.inbox = db.inbox.filter((x) => x.id !== item.id); persist(); };
+  if (d.kind === "cast") {
+    const id = mergeCast(d.character);
+    done(); toast("Added to cast"); return go("cast/" + id);
+  }
+  if (d.profile && !db.profiles[d.profile.id]) db.profiles[d.profile.id] = d.profile;
+  const map = {};
+  for (const c of d.cast || []) map[c.id] = mergeCast(c);
+  const r = { ...structuredClone(d.recipe), id: uid("rec"), no: db.nextNo++, createdAt: Date.now(), runs: [], versions: [], image: null, coverId: null };
+  if (!db.profiles[r.profile]) r.profile = Object.keys(db.profiles)[0];
+  for (const b of r.blocks) if (b.type === "character" && map[b.ref]) b.ref = map[b.ref];
+  db.recipes.unshift(r);
+  done(); toast("Recipe imported");
+  go("recipe/" + r.id);
 }
 
 // ---------- Versions ----------
@@ -1086,7 +1185,7 @@ function castTicket(c, i) {
     <div class="tk-tear"></div>
     <div class="tk-stub">
       <div><p>${c.lora ? esc(c.lora.name) : "No LoRA"}</p><p class="mono">${c.lora ? "weight " + c.lora.w : "tags only"}</p></div>
-      <button class="link" data-act="cast-toggle" data-c="${c.id}">${open ? "Done" : "Edit"}</button>
+      <span class="row"><button class="link" data-act="share-cast" data-c="${c.id}">Share</button><button class="link" data-act="cast-toggle" data-c="${c.id}">${open ? "Done" : "Edit"}</button></span>
     </div>
   </article>`;
 }
@@ -1374,6 +1473,8 @@ document.addEventListener("click", async (e) => {
     case "comfy-node": { const pos = finalOut(r).positive; noteSend(r, pos, "sent to a node"); drawVersions(r); return withComfyTab({ mode: "selected", text: pos, append: false }, "Sent"); }
     case "send-comfy": noteSend(r, finalOut(r).positive, "queued"); drawVersions(r); return queueSaved(r);
     case "lora-del": r.settings.loras.splice(Number(el.dataset.j), 1); persist(); $("#lora-edit").innerHTML = loraRows(r); drawOutput(r); break;
+    case "share-recipe": return shareRecipe(r).catch((e) => toast("Couldn't make the card: " + e.message));
+    case "share-cast": return shareCast(charById(el.dataset.c)).catch((e) => toast("Couldn't make the card: " + e.message));
     case "ver-save": toast(saveVersion(r, "saved") ? "Version saved" : "Nothing changed since the last version"); persist(); drawVersions(r); break;
     case "ver-diff": ui.diffId = ui.diffId === el.dataset.v ? null : el.dataset.v; drawVersions(r); break;
     case "ver-restore": {

@@ -24,7 +24,7 @@ A Chrome side-panel extension for people who make images with Stable Diffusion, 
 - ⌨️ **Tag autocomplete** — suggestions from your own library, an imported Danbooru tag list (with post counts and aliases), and live Danbooru lookups.
 - 🎚️ **Prompt tools** — scroll over a tag to weight it, `{a|b}` and `__snippet__` wildcards with a roll button, a CLIP token counter, and a checker for duplicates, contradictions and over-weighted tags.
 - 🔗 **ComfyUI and Forge** — load a recipe, LoRAs included, straight into the open ComfyUI workflow, or copy it in Forge's format and fill in every setting with one click.
-- 💾 **Yours to keep and share** — everything stays in your browser, with JSON backups and PNG share cards that carry a recipe or character to someone else's Prompto. No account, and no AI.
+- 💾 **Yours to keep and share** — everything stays in your browser, with JSON backups, PNG share cards for recipes and characters, and imports from other prompt managers. No account, and no AI.
 
 ## 📸 Screenshots
 
@@ -232,6 +232,21 @@ Underscores become spaces, except in emoticons such as `^_^`.
 - With **ComfyUI-Prompto** installed, Prompto works through its bridge instead of ComfyUI's internals, syncs your library to the ComfyUI sidebar, and collects captures from ComfyUI.
 - Recent ComfyUI versions turn away requests that come straight from extensions. That's why Prompto goes through the open tab. **Queue saved graph** calls the API directly and may need ComfyUI started with `--enable-cors-header`.
 - The ComfyUI desktop app isn't a browser tab, so only **Queue saved graph** works with it.
+</details>
+
+<details>
+<summary><b>📦 Importing from other tools</b></summary>
+
+**Settings → Library → Import** (or dropping the file on the panel) also reads:
+
+| File | From | Becomes |
+|---|---|---|
+| `prompt_manager_data.json` or its export | [FranckyB's ComfyUI-Prompt-Manager](https://github.com/FranckyB/ComfyUI-Prompt-Manager) | recipes for prompts saved with LoRAs or workflow settings (prompt, negative, model, LoRAs, sampler, steps, CFG, seed, size, trigger words); snippets for the rest, filed under their category |
+| `prompt_manager_*.json` export, or its CSV | [ComfyAssets' ComfyUI_PromptManager](https://github.com/ComfyAssets/ComfyUI_PromptManager) | recipes; prompts rated 4★ or more are starred. It doesn't store negatives or settings |
+| `styles.csv` | A1111 / Forge | snippets in **A1111 styles**, with each style's negative as a separate **Negative** snippet; `{prompt}` placeholders are removed |
+| chants `.json` | [a1111 tag-autocomplete](https://github.com/DominikDoom/a1111-sd-webui-tagcomplete) | snippets in **Chants** |
+
+A preview shows what will be added. Snippets already in the library (same category and name) and recipes with the same prompt are skipped, so importing the same file twice adds nothing. Weighted groups like `(worst quality, low quality:1.4)` become separate tags that keep the weight.
 </details>
 
 <details>

@@ -14,6 +14,9 @@ lib/booru.js         Danbooru and e621 posts, character looks (related tags) and
 lib/civitai.js       Civitai image recipes from its images API
 lib/prose.js         tags → prose templates
 lib/diff.js          tag and word diffs for recipe versions
+lib/wildcards.js     {a|b} and __name__ wildcards, seeded rolls
+lib/card.js          share cards: ticket drawing and PNG text chunks
+lib/importers.js     readers for other prompt tools' files
 lib/tags.js          tag list (CSV → IndexedDB), library tags, Danbooru tag lookups
 lib/autocomplete.js  the tag suggestion dropdown
 lib/comfy.js         ComfyUI heartbeat, tab bridge, in-page graph editing, queueing

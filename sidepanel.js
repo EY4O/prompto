@@ -6,6 +6,7 @@ import { loadTagList, importTagCsv, clearTagList, tagListInfo, searchLocal, libr
 import { attachAutocomplete } from "./lib/autocomplete.js";
 import { tagDiff, wordDiff, settingsDiff, changed } from "./lib/diff.js";
 import { cardPng, asciiJson } from "./lib/card.js";
+import { detect as detectForeign, convert as convertForeign } from "./lib/importers.js";
 import { hasWildcards, wildcardNames, expand, seededRandom, slug } from "./lib/wildcards.js";
 import { fetchLook, draftCharacter, postFromGroups, sceneTags } from "./lib/booru.js";
 import { DEFAULT_COMFY, normalizeBase, originPattern, ping, findTab, queueGraph, applyInTab, bridgeCall, fetchLoras, queueInTab } from "./lib/comfy.js";
@@ -30,7 +31,7 @@ const store = {
 
 let db;
 const ui = {
-  rolls: {}, refPick: null, tab: "inbox", recipeId: null, openChar: null, openProfile: null, q: "", filter: "all", sort: "new", lightbox: null, diffId: null,
+  rolls: {}, refPick: null, pendingForeign: null, tab: "inbox", recipeId: null, openChar: null, openProfile: null, q: "", filter: "all", sort: "new", lightbox: null, diffId: null,
   importId: null, sheet: null,
   comfyLive: false, comfyTab: null, bridge: null, syncedRev: -1, focus: null, pendingImport: null, rev: 0
 };
@@ -466,7 +467,7 @@ async function makeThumb(file, max = 480) {
 }
 
 async function handleFiles(files) {
-  const json = files.find((f) => f.type === "application/json" || f.name.endsWith(".json"));
+  const json = files.find((f) => f.type === "application/json" || /\.(json|csv)$/i.test(f.name));
   if (json) return readImport(json);
   let read = 0, saved = 0;
   for (const file of files) {
@@ -1313,6 +1314,12 @@ function drawSettings() {
       <div class="tk-bg"></div>
       <div class="tk-head"><span class="tag">Backup</span><span class="kv">JSON</span></div>
       <p class="kv" style="margin-top:10px">${plural(n("recipes"), "recipe")} · ${n("characters")} cast · ${plural(n("snippets"), "snippet")} · ${n("inbox")} in inbox · ${plural(Object.keys(db.profiles).length, "profile")}</p>
+      ${ui.pendingForeign ? `<div class="import-box">
+          <p class="snip-name">${esc(ui.pendingForeign.name)}</p>
+          <p class="kv">${esc(ui.pendingForeign.format)} · ${plural(ui.pendingForeign.recipes.length, "recipe")} · ${plural(ui.pendingForeign.snippets.length, "snippet")}${ui.pendingForeign.skipped ? ` · ${ui.pendingForeign.skipped} already here` : ""}</p>
+          <p class="hint">${esc([...ui.pendingForeign.recipes.slice(0, 3).map((r) => r.title), ...ui.pendingForeign.snippets.slice(0, 3).map((s) => s.cat + " · " + s.name)].join(", "))}${ui.pendingForeign.recipes.length + ui.pendingForeign.snippets.length > 6 ? "…" : ""}</p>
+          <div class="row"><button class="btn sm" data-act="foreign-add">Add them</button><button class="link" data-act="foreign-cancel">Cancel</button></div>
+        </div>` : ""}
       ${pend ? `<div class="import-box">
           <p class="snip-name">${esc(pend.name)}</p>
           <p class="kv">${plural(pend.data.recipes.length, "recipe")} · ${pend.data.characters.length} cast · ${plural(pend.data.snippets.length, "snippet")} · ${pend.data.inbox.length} in inbox</p>
@@ -1321,11 +1328,11 @@ function drawSettings() {
         </div>` : ""}
       <div class="row" style="margin-top:10px">
         <button class="btn sm" data-act="export">Export <i aria-hidden="true">→</i></button>
-        <label class="btn ghost sm" for="import-file" style="cursor:pointer">Import</label>
-        <input type="file" id="import-file" class="sr-only" accept=".json,application/json">
+        <label class="btn ghost sm" for="import-file" style="cursor:pointer" title="A Prompto backup, or a file from FranckyB Prompt Manager, ComfyAssets PromptManager, A1111 styles.csv or tag-complete chants">Import</label>
+        <input type="file" id="import-file" class="sr-only" accept=".json,.csv,application/json,text/csv">
         <button class="link" data-act="clear-samples">Remove sample items</button>
       </div>
-      <p class="hint" style="margin-top:8px">The tag list isn't included; it stays on this device.</p>
+      <p class="hint" style="margin-top:8px">The tag list isn't included; it stays on this device. <b>Import</b> also reads files from FranckyB's Prompt Manager, ComfyAssets' PromptManager, A1111 <span class="mono">styles.csv</span> and tag-complete chants.</p>
     </section>`;
 }
 
@@ -1341,14 +1348,49 @@ function exportLibrary() {
 }
 
 async function readImport(file) {
+  const text = await file.text();
+  // Not a Prompto backup? It may come from another prompt tool.
+  const foreign = detectForeign(file.name, text);
+  if (foreign && foreign.format !== "prompto") return readForeign(file.name, foreign);
   try {
-    const json = JSON.parse(await file.text());
+    const json = JSON.parse(text);
     const data = json && json.app === "prompto" ? json.data : json;
     if (!data || !["recipes", "characters", "snippets", "inbox"].some((k) => Array.isArray(data[k]))) throw new Error();
     ui.pendingImport = { name: file.name, data: migrate(data) };
     go("settings");
     requestAnimationFrame(() => $(".import-box")?.scrollIntoView({ block: "center", behavior: "smooth" }));
   } catch { toast("That file isn't a Prompto library"); }
+}
+
+// ---------- Importing from other tools ----------
+function readForeign(name, found) {
+  const { recipes, snippets } = convertForeign(found);
+  const haveSnip = new Set(db.snippets.map((x) => `${x.cat}|${x.name}`.toLowerCase()));
+  // Imported recipes remember the prompt they came from, since added trigger words change their output.
+  const haveRec = new Set(db.recipes.flatMap((r) => [promptKey(render(r, profileOf(r), db).positive), r.importKey].filter(Boolean)));
+  const freshS = snippets.filter((x) => !haveSnip.has(`${x.cat}|${x.name}`.toLowerCase()));
+  const freshR = recipes.filter((x) => !haveRec.has(promptKey(x.positive)));
+  if (!freshS.length && !freshR.length) return toast(recipes.length || snippets.length ? `Everything in that ${found.format} file is already here` : `Nothing to import in that ${found.format} file`);
+  ui.pendingForeign = { name, format: found.format, recipes: freshR, snippets: freshS, skipped: recipes.length + snippets.length - freshR.length - freshS.length };
+  go("settings");
+  requestAnimationFrame(() => $(".import-box")?.scrollIntoView({ block: "center", behavior: "smooth" }));
+}
+
+function applyForeign() {
+  const f = ui.pendingForeign;
+  for (const x of f.snippets) db.snippets.push({ id: uid("sn"), ...x });
+  for (const x of f.recipes) {
+    const r = newRecipe();
+    const set = Object.fromEntries(Object.entries(x.settings || {}).filter(([, v]) => v !== undefined && v !== "" && v !== null));
+    Object.assign(r, { title: x.title, blocks: x.blocks, negative: x.negative, fav: x.fav, image: x.image || null, importKey: promptKey(x.positive) });
+    r.settings = { ...r.settings, ...set, loras: set.loras || [] };
+    r.profile = guessProfile(r.settings.model || "", x.positive);
+    db.recipes.unshift(r);
+  }
+  const msg = [f.recipes.length && `${f.recipes.length} recipe${f.recipes.length > 1 ? "s" : ""}`, f.snippets.length && `${f.snippets.length} snippet${f.snippets.length > 1 ? "s" : ""}`].filter(Boolean).join(" and ");
+  ui.pendingForeign = null;
+  persist(); draw();
+  toast(`Imported ${msg}`);
 }
 
 function mergeLibrary(inc) {
@@ -1604,6 +1646,8 @@ document.addEventListener("click", async (e) => {
     case "export": exportLibrary(); break;
     case "lora-refresh": refreshLoras(ui.comfyTab, true).then(() => draw()); break;
     case "import-cancel": ui.pendingImport = null; draw(); break;
+    case "foreign-add": applyForeign(); break;
+    case "foreign-cancel": ui.pendingForeign = null; draw(); break;
     case "import-merge": {
       const added = mergeLibrary(ui.pendingImport.data);
       ui.pendingImport = null; persist(); draw(); toast(added ? `Added ${added} item${added > 1 ? "s" : ""}` : "Nothing new in that file"); break;
@@ -1810,6 +1854,7 @@ document.addEventListener("dragover", (e) => {
   if (hasFiles(e) || dropTarget) e.preventDefault();
 });
 document.addEventListener("drop", async (e) => {
+  if (!db) { e.preventDefault(); return toast("One moment, the library is still loading"); }
   const target = e.target.closest && e.target.closest("[data-drop-cast]");
   dragDepth = 0; veil.classList.remove("on");
   if (dropTarget) dropTarget.classList.remove("drop-here");

@@ -19,7 +19,7 @@ A Chrome side-panel extension for people who make images with Stable Diffusion, 
 ## ✨ Key Features
 
 - 📥 **Inbox for everything** — right-click text, an image, a booru post or a Civitai image; type `p` and a space in the address bar; or drop a PNG on the panel.
-- 🧬 **Recipes, results and versions** — reads the prompt and settings inside ComfyUI and A1111/Forge PNGs; images you make land back on their recipe with ★ ratings, and every run is versioned so you can compare what changed.
+- 🧬 **Recipes, results and versions** — reads the prompt and settings inside ComfyUI and A1111/Forge PNGs; images you make land back on their recipe with ★ ratings, every run is versioned, and recipes file into folders.
 - 🧱 **One recipe, every model** — a recipe is made of blocks (subject, character, pose, scene, lighting…) with tags and prose side by side, and model profiles turn it into the right prompt for Illustrious, Anima, Flux Krea or Qwen Image.
 - ✍️ **Prose from tags, no AI** — editable templates turn `1girl, silver hair, twin braids` into "a girl with long silver hair in twin braids" for prose models.
 - 🎭 **Characters from boorus** — a **+ Prompto** button on Danbooru, Gelbooru and Safebooru posts (and right-click on e621) learns a character's usual look from their solo posts and sorts the tags into appearance and outfit.
@@ -136,6 +136,12 @@ Each recipe keeps a gallery of the images made from it, up to 60:
 - **Matching**: Prompto remembers what you copied, loaded or queued in the last three days, then compares against every recipe's current prompt. Case, spacing, escaped brackets and trailing commas don't matter.
 
 Click a result to open it larger, rate it, make it the recipe's cover, or copy its seed back into the recipe. Recipe cards show the average rating, and **Recipes** can be sorted by **Top rated** or **Most results**.
+</details>
+
+<details>
+<summary><b>🗂️ Folders</b></summary>
+
+**Recipes** has a row of folders: **All**, **Unfiled**, and your own, each with a count. **+ Folder** makes one, and the selected folder can be renamed or deleted (its recipes become unfiled). To file recipes, drag a card onto a folder, pick a folder in the recipe's header, or press **Select**, pick several cards, and use **Move to…**; the same bar stars or deletes them in one go. New recipes start in the folder you're looking at.
 </details>
 
 <details>

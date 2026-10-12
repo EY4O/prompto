@@ -31,7 +31,7 @@ const store = {
 
 let db;
 const ui = {
-  rolls: {}, refPick: null, pendingForeign: null, tab: "inbox", recipeId: null, openChar: null, openProfile: null, q: "", filter: "all", sort: "new", lightbox: null, diffId: null,
+  rolls: {}, refPick: null, pendingForeign: null, folder: "all", picking: false, picked: new Set(), renamingFolder: null, tab: "inbox", recipeId: null, openChar: null, openProfile: null, q: "", filter: "all", sort: "new", lightbox: null, diffId: null,
   importId: null, sheet: null,
   comfyLive: false, comfyTab: null, bridge: null, syncedRev: -1, focus: null, pendingImport: null, rev: 0
 };
@@ -44,6 +44,7 @@ function migrate(d) {
   if (!d.profiles || !Object.keys(d.profiles).length) d.profiles = structuredClone(DEFAULT_PROFILES);
   d.settings = { comfyUrl: DEFAULT_COMFY, onlineTags: true, proseTemplates: {}, autoResults: true, ...(d.settings || {}) };
   if (!Array.isArray(d.recentSends)) d.recentSends = [];
+  if (!Array.isArray(d.folders)) d.folders = [];
   for (const r of d.recipes) { if (!Array.isArray(r.runs)) r.runs = []; if (!Array.isArray(r.versions)) r.versions = []; }
   for (const c of d.characters) {
     c.appearance = c.appearance || []; c.outfits = c.outfits || {};
@@ -504,7 +505,8 @@ function newRecipe() {
 function recipeTicket(r) {
   const p = profileOf(r);
   const s = r.settings || {};
-  return `<a class="tk" href="#recipe/${r.id}" style="${huesOf(p)};--stub:58px">
+  return `<a class="tk${ui.picked.has(r.id) ? " picked" : ""}" href="#recipe/${r.id}" style="${huesOf(p)};--stub:58px" draggable="true" data-recipe="${r.id}">
+    ${ui.picking ? `<span class="pick-box" aria-hidden="true">${ui.picked.has(r.id) ? "✓" : ""}</span>` : ""}
     <div class="tk-bg"><span class="tk-mark">${pad(r.no, 2)}</span></div>
     <div class="tk-head"><span class="tag">${esc(p.label)}</span><span class="num">No. <b>${pad(r.no)}</b>${r.fav ? " ✦" : ""}</span></div>
     <h3 class="tk-title">${esc(r.title)}</h3>
@@ -517,22 +519,53 @@ function recipeTicket(r) {
   </a>`;
 }
 
+// ---------- Folders ----------
+const folderById = (id) => db.folders.find((f) => f.id === id);
+const inFolder = (r, f) => f === "all" || (f === "unfiled" ? !folderById(r.folder) : r.folder === f);
+
+function folderRow() {
+  const count = (f) => db.recipes.filter((r) => inFolder(r, f)).length;
+  const chip = (id, label) => `<button class="folder${ui.folder === id ? " on" : ""}" data-act="folder" data-f="${esc(id)}" data-drop-folder="${esc(id)}" aria-pressed="${ui.folder === id}">${esc(label)}<b>${count(id)}</b></button>`;
+  const cur = folderById(ui.folder);
+  return `<div class="folders" role="group" aria-label="Folders">
+      ${chip("all", "All")}${chip("unfiled", "Unfiled")}${db.folders.map((f) => chip(f.id, f.name)).join("")}
+      <button class="folder add" data-act="folder-new" aria-label="New folder">+ Folder</button>
+    </div>
+    ${cur ? `<div class="folder-tools">
+      ${ui.renamingFolder === cur.id ? `<input class="folder-name" id="folder-name" value="${esc(cur.name)}" aria-label="Folder name" spellcheck="false"><button class="link" data-act="folder-rename-save">Save</button>`
+        : `<span class="kv">${esc(cur.name)}</span><button class="link" data-act="folder-rename">Rename</button>`}
+      <button class="link" data-act="folder-del">Delete folder</button></div>` : ""}`;
+}
+
+function moveToFolder(ids, folder) {
+  for (const r of db.recipes) if (ids.has(r.id)) r.folder = folder === "unfiled" ? null : folder;
+  persist();
+}
+
 function drawRecipes() {
   if (ui.filter !== "all" && ui.filter !== "fav" && !db.profiles[ui.filter]) ui.filter = "all";
-  const list = db.recipes.filter((r) => (ui.filter === "all" || ui.filter === r.profile || (ui.filter === "fav" && r.fav)) &&
+  if (ui.folder !== "all" && ui.folder !== "unfiled" && !folderById(ui.folder)) ui.folder = "all";
+  const list = db.recipes.filter((r) => inFolder(r, ui.folder) && (ui.filter === "all" || ui.filter === r.profile || (ui.filter === "fav" && r.fav)) &&
     matches(ui.q, r.title, render(r, profileOf(r), db).positive));
   const SORTS = { new: (a, b) => b.createdAt - a.createdAt, rated: (a, b) => avgRating(b) - avgRating(a) || b.createdAt - a.createdAt, runs: (a, b) => (b.runs || []).length - (a.runs || []).length };
   list.sort(SORTS[ui.sort] || SORTS.new);
   const f = (id, label) => `<button class="fchip" data-act="filter" data-f="${esc(id)}" aria-pressed="${ui.filter === id}">${esc(label)}</button>`;
   view.innerHTML = `
+    ${folderRow()}
     <div class="spread">
       <div class="filters">${f("all", "All")}${f("fav", "✦")}${Object.values(db.profiles).map((p) => f(p.id, p.label)).join("")}</div>
       <button class="btn sm" data-act="new-recipe">New <i aria-hidden="true">→</i></button>
     </div>
-    <div class="sec">Recipes<span class="aside">${list.length} of ${db.recipes.length} ·
+    <div class="sec">Recipes<span class="aside"><button class="link" data-act="pick-toggle">${ui.picking ? "Done" : "Select"}</button> · ${list.length} of ${db.recipes.length} ·
       <select id="sort" aria-label="Sort recipes">${[["new", "Newest"], ["rated", "Top rated"], ["runs", "Most results"]].map(([v, l]) => `<option value="${v}" ${ui.sort === v ? "selected" : ""}>${l}</option>`).join("")}</select></span></div>
-    ${list.length ? `<div class="grid">${list.map(recipeTicket).join("")}</div>`
-      : `<div class="empty"><h3>No <span class="holo-text">match</span></h3><p>Try another filter, or file something from the inbox.</p></div>`}`;
+    ${list.length ? `<div class="grid${ui.picking ? " picking" : ""}">${list.map(recipeTicket).join("")}</div>`
+      : `<div class="empty"><h3>No <span class="holo-text">match</span></h3><p>${ui.folder !== "all" ? "Nothing in this folder yet. Drag a recipe onto it, or pick it in the recipe." : "Try another filter, or file something from the inbox."}</p></div>`}
+    ${ui.picking ? `<div class="bulk-bar" role="toolbar" aria-label="Selected recipes">
+      <span><b>${ui.picked.size}</b> selected</span>
+      <select id="bulk-folder" aria-label="Move to folder"><option value="">Move to…</option><option value="unfiled">Unfiled</option>${db.folders.map((fo) => `<option value="${fo.id}">${esc(fo.name)}</option>`).join("")}</select>
+      <button class="link" data-act="bulk-star">Star</button>
+      <button class="link" data-act="bulk-del">Delete</button>
+    </div>` : ""}`;
 }
 
 const isWeighted = (w) => Math.abs((w ?? 1) - 1) > 0.001;
@@ -632,6 +665,7 @@ function drawRecipe() {
         ${Object.values(db.profiles).map((x) => `<button data-act="profile" data-p="${esc(x.id)}" aria-pressed="${x.id === p.id}"><b>${esc(x.label)}</b><small>${esc(x.base)}</small></button>`).join("")}
       </div>
       <p class="profile-hint kv">${esc(p.hint)}${p.weights ? " · weights on" : " · weights ignored"} · <a class="link" href="#settings" data-act="edit-profile" data-p="${esc(p.id)}">Edit profile</a></p>
+      <label class="recipe-folder">Folder <select id="recipe-folder"><option value="">Unfiled</option>${db.folders.map((fo) => `<option value="${fo.id}" ${r.folder === fo.id ? "selected" : ""}>${esc(fo.name)}</option>`).join("")}</select></label>
     </section>
 
     <div class="sec">Blocks<span class="aside">scroll a tag to weight it</span></div>
@@ -1427,6 +1461,13 @@ attachAutocomplete({
 // ---------- Events ----------
 document.addEventListener("click", async (e) => {
   if (e.target.id === "lightbox") { ui.lightbox = null; return drawLightbox(); }
+  const card = ui.picking && e.target.closest("a.tk[data-recipe]");
+  if (card) {
+    e.preventDefault();
+    const id = card.dataset.recipe;
+    if (ui.picked.has(id)) ui.picked.delete(id); else ui.picked.add(id);
+    return draw();
+  }
   const tabBtn = e.target.closest("#tabs button");
   if (tabBtn) return go(tabBtn.dataset.tab);
   if (e.target.closest("#settings-btn")) return go("settings");
@@ -1466,7 +1507,37 @@ document.addEventListener("click", async (e) => {
     case "sheet-file": return fileSheet();
     case "discard": db.inbox = db.inbox.filter((x) => x.id !== el.dataset.id); persist(); draw(); toast("Discarded"); break;
     case "filter": ui.filter = el.dataset.f; draw(); break;
-    case "new-recipe": { const n = newRecipe(); db.recipes.unshift(n); persist(); go("recipe/" + n.id); break; }
+    case "new-recipe": { const n = newRecipe(); if (folderById(ui.folder)) n.folder = ui.folder; db.recipes.unshift(n); persist(); go("recipe/" + n.id); break; }
+    case "folder": ui.folder = el.dataset.f; ui.renamingFolder = null; draw(); break;
+    case "folder-new": {
+      const f = { id: uid("fld"), name: "New folder" };
+      db.folders.push(f); ui.folder = f.id; ui.renamingFolder = f.id; persist(); draw();
+      const inp = $("#folder-name"); if (inp) { inp.focus(); inp.select(); }
+      break;
+    }
+    case "folder-rename": ui.renamingFolder = ui.folder; draw(); $("#folder-name")?.focus(); break;
+    case "folder-rename-save": { const f = folderById(ui.folder); f.name = $("#folder-name").value.trim() || f.name; ui.renamingFolder = null; persist(); draw(); break; }
+    case "folder-del": {
+      const f = folderById(ui.folder);
+      if (!armed(el, "Press again to delete")) return;
+      for (const r2 of db.recipes) if (r2.folder === f.id) r2.folder = null;
+      db.folders = db.folders.filter((x) => x.id !== f.id); ui.folder = "unfiled"; persist(); draw();
+      toast(`Deleted ${f.name}; its recipes are unfiled`); break;
+    }
+    case "pick-toggle": ui.picking = !ui.picking; ui.picked.clear(); draw(); break;
+    case "bulk-star": {
+      if (!ui.picked.size) return toast("Pick some recipes first");
+      const allStarred = db.recipes.filter((x) => ui.picked.has(x.id)).every((x) => x.fav);
+      for (const x of db.recipes) if (ui.picked.has(x.id)) x.fav = !allStarred;
+      persist(); draw(); break;
+    }
+    case "bulk-del": {
+      if (!ui.picked.size) return toast("Pick some recipes first");
+      if (!armed(el, `Press again to delete ${ui.picked.size}`)) return;
+      const n = ui.picked.size;
+      db.recipes = db.recipes.filter((x) => !ui.picked.has(x.id)); ui.picked.clear(); persist(); draw();
+      toast(`Deleted ${n} recipe${n > 1 ? "s" : ""}`); break;
+    }
     case "profile": r.profile = el.dataset.p; persist(); drawRecipe(); break;
     case "edit-profile": ui.openProfile = el.dataset.p; break;
     case "fav": r.fav = !r.fav; persist(); drawRecipe(); break;
@@ -1671,6 +1742,13 @@ document.addEventListener("change", async (e) => {
   const r = ui.recipeId && recipeById(ui.recipeId);
   if (t.id === "cap-file") return handleFiles([...t.files]);
   if (t.id === "sort") { ui.sort = t.value; return draw(); }
+  if (t.id === "recipe-folder") { r.folder = t.value || null; persist(); return toast(t.value ? "Moved to " + folderById(t.value).name : "Unfiled"); }
+  if (t.id === "bulk-folder" && t.value) {
+    if (!ui.picked.size) { t.value = ""; return toast("Pick some recipes first"); }
+    const n = ui.picked.size, name = t.value === "unfiled" ? "Unfiled" : folderById(t.value).name;
+    moveToFolder(ui.picked, t.value); ui.picked.clear(); draw();
+    return toast(`Moved ${n} recipe${n > 1 ? "s" : ""} to ${name}`);
+  }
   if (t.id === "import-file") return t.files[0] && readImport(t.files[0]);
   if (t.id === "tag-file" && t.files[0]) {
     toast("Reading tag list…");
@@ -1750,6 +1828,7 @@ document.addEventListener("input", (e) => {
 document.addEventListener("keydown", (e) => {
   const t = e.target;
   if (e.key === "Escape" && ui.lightbox) { ui.lightbox = null; return drawLightbox(); }
+  if (t.id === "folder-name" && e.key === "Enter") { e.preventDefault(); return $('[data-act="folder-rename-save"]').click(); }
   if (t.id === "cap-text" && e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); return $('[data-act="capture"]').click(); }
   if (t.classList.contains("lora-add") && e.key === "Enter") {
     e.preventDefault();
@@ -1829,7 +1908,7 @@ let dragDepth = 0;
 const dragTypes = (e) => [...(e.dataTransfer?.types || [])];
 const hasFiles = (e) => dragTypes(e).includes("Files");
 // Images dragged out of another web page arrive as a URL rather than a file.
-const hasImageUrl = (e) => dragTypes(e).includes("text/uri-list") || dragTypes(e).includes("text/html");
+const hasImageUrl = (e) => !dragTypes(e).includes("application/x-prompto-recipe") && (dragTypes(e).includes("text/uri-list") || dragTypes(e).includes("text/html"));
 function draggedImageUrl(e) {
   const html = e.dataTransfer.getData("text/html");
   const m = html && html.match(/<img[^>]+src="([^"]+)"/i);
@@ -1837,6 +1916,32 @@ function draggedImageUrl(e) {
   const uri = (e.dataTransfer.getData("text/uri-list") || "").split("\n").find((l) => l && !l.startsWith("#"));
   return uri && /\.(png|jpe?g|webp|gif|avif)(\?|$)/i.test(uri) ? uri.trim() : null;
 }
+// Recipe cards carry their id; dropping one on a folder chip files it there.
+const RECIPE_DRAG = "application/x-prompto-recipe";
+document.addEventListener("dragstart", (e) => {
+  const card = e.target.closest && e.target.closest("a.tk[data-recipe]");
+  if (!card) return;
+  const ids = ui.picking && ui.picked.has(card.dataset.recipe) ? [...ui.picked] : [card.dataset.recipe];
+  e.dataTransfer.setData(RECIPE_DRAG, JSON.stringify(ids));
+  e.dataTransfer.effectAllowed = "move";
+});
+document.addEventListener("dragover", (e) => {
+  if (!dragTypes(e).includes(RECIPE_DRAG)) return;
+  const chip = e.target.closest && e.target.closest("[data-drop-folder]");
+  document.querySelectorAll(".folder.drop-here").forEach((x) => x !== chip && x.classList.remove("drop-here"));
+  if (chip && chip.dataset.dropFolder !== "all") { e.preventDefault(); chip.classList.add("drop-here"); }
+});
+document.addEventListener("drop", (e) => {
+  if (!dragTypes(e).includes(RECIPE_DRAG)) return;
+  const chip = e.target.closest && e.target.closest("[data-drop-folder]");
+  if (!chip || chip.dataset.dropFolder === "all") return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  const ids = new Set(JSON.parse(e.dataTransfer.getData(RECIPE_DRAG)));
+  moveToFolder(ids, chip.dataset.dropFolder);
+  ui.picked.clear(); draw();
+  toast(`Moved ${ids.size} recipe${ids.size > 1 ? "s" : ""} to ${chip.dataset.dropFolder === "unfiled" ? "Unfiled" : folderById(chip.dataset.dropFolder).name}`);
+}, true);
+
 let dropTarget = null;
 function markDrop(e) {
   const t = e.target.closest && e.target.closest("[data-drop-cast]");

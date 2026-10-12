@@ -365,6 +365,28 @@ button.chip:hover, .chip.edit:hover { border-color: var(--line-2); }
 .ac-dot[data-cat="4"] { background: #3f9b6e; }
 .ac-dot[data-cat="5"] { background: #d39a3d; }
 
+/* ---------- Folders ---------- */
+.folders { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.folder { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line-2); font-size: 12px; font-weight: 500; text-transform: uppercase; color: var(--fg-2); transition: all 0.2s; }
+.folder b { font-size: 10px; font-weight: 500; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px 0; display: inline-grid; place-items: center; background: var(--wash); color: var(--fg-2); }
+.folder:hover { border-color: var(--fg); color: var(--fg); }
+.folder.on { background: var(--pill-bg); color: var(--pill-fg); border-color: transparent; }
+.folder.on b { background: var(--holo); background-size: 300% 100%; color: var(--ink); }
+.folder.add { border-style: dashed; }
+.folder.drop-here { outline: 2px dashed var(--rose); outline-offset: 2px; color: var(--fg); }
+.folder-tools { display: flex; align-items: center; gap: 12px; margin: -2px 0 12px; }
+.folder-name { border: 0; border-bottom: 1px solid var(--rose); background: none; outline: none; font: inherit; font-size: 13px; text-transform: uppercase; color: var(--fg); min-width: 0; flex: 1; }
+.recipe-folder { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 10.5px; text-transform: uppercase; color: var(--fg-2); }
+.recipe-folder select { font: inherit; font-size: 11px; border: 1px solid var(--line-2); border-radius: 50px; padding: 2px 8px; background: var(--bg); color: var(--fg); }
+.grid.picking .tk { cursor: pointer; }
+.tk > .pick-box { position: absolute; top: -8px; left: -8px; z-index: 3; width: 22px; height: 22px; border-radius: 6px; border: 2px solid var(--fg); background: var(--bg); display: grid; place-items: center; font-size: 13px; font-weight: 700; color: var(--fg); }
+.tk.picked { outline: 3px solid var(--rose); outline-offset: 3px; border-radius: 14px; }
+.tk.picked .pick-box { background: var(--rose); border-color: var(--rose); color: #fff; }
+.bulk-bar { position: sticky; bottom: 12px; z-index: 5; margin-top: 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 50px; background: var(--pill-bg); color: var(--pill-fg); font-size: 12px; text-transform: uppercase; }
+.bulk-bar .link { color: inherit; border-color: currentColor; }
+.bulk-bar select { font: inherit; font-size: 11px; border-radius: 50px; border: 1px solid currentColor; background: transparent; color: inherit; padding: 3px 8px; }
+.bulk-bar select option { color: #101117; }
+
 /* ---------- Reference boards ---------- */
 .refs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px; border-radius: 8px; border: 1px dashed transparent; transition: border-color 0.2s, background 0.2s; }
 .char-open .refs { border-color: var(--line-2); min-height: 52px; }

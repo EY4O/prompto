@@ -136,6 +136,8 @@ Each recipe keeps a gallery of the images made from it, up to 60:
 - **Matching**: Prompto remembers what you copied, loaded or queued in the last three days, then compares against every recipe's current prompt. Case, spacing, escaped brackets and trailing commas don't matter.
 
 Click a result to open it larger, rate it, make it the recipe's cover, or copy its seed back into the recipe. Recipe cards show the average rating, and **Recipes** can be sorted by **Top rated** or **Most results**.
+
+**Compare** picks two to four results and shows them **side by side**: each with its rating and seed, and, against the first one you picked, the tags its prompt added or dropped. Variants from **Queue variants** come back with their own prompts, so this is the quickest way to see which roll won.
 </details>
 
 <details>

@@ -31,7 +31,7 @@ const store = {
 
 let db;
 const ui = {
-  rolls: {}, refPick: null, pendingForeign: null, folder: "all", picking: false, picked: new Set(), renamingFolder: null, tab: "inbox", recipeId: null, openChar: null, openProfile: null, q: "", filter: "all", sort: "new", lightbox: null, diffId: null,
+  rolls: {}, comparing: false, cmpPick: [], refPick: null, pendingForeign: null, folder: "all", picking: false, picked: new Set(), renamingFolder: null, tab: "inbox", recipeId: null, openChar: null, openProfile: null, q: "", filter: "all", sort: "new", lightbox: null, diffId: null,
   importId: null, sheet: null,
   comfyLive: false, comfyTab: null, bridge: null, syncedRev: -1, focus: null, pendingImport: null, rev: 0
 };
@@ -144,7 +144,7 @@ $("#theme-btn").addEventListener("click", () => {
 const TABS = ["inbox", "recipes", "characters", "snippets", "settings"];
 function route() {
   const [tab, id] = location.hash.replace(/^#/, "").split("/");
-  ui.recipeId = null; ui.importId = null; ui.lightbox = null; ui.diffId = null; drawLightbox();
+  ui.recipeId = null; ui.importId = null; ui.lightbox = null; ui.diffId = null; ui.comparing = false; ui.cmpPick = []; drawLightbox();
   if (tab === "recipe" && id && recipeById(id)) { ui.tab = "recipes"; ui.recipeId = id; }
   else if (tab === "import" && id && db.inbox.some((i) => i.id === id && i.kind === "booru")) { ui.tab = "inbox"; ui.importId = id; }
   else if (tab === "cast") { ui.tab = "characters"; ui.openChar = id || ui.openChar; }
@@ -264,7 +264,7 @@ function fileItem(id, as) {
   if (as === "results") {
     const r = matchRecipe(item.meta.positive);
     if (!r) return toast("No recipe has this prompt any more");
-    addRun(r, { thumb: item.thumb, seed: item.meta.settings.seed, source: item.source || "PNG", filename: item.title });
+    addRun(r, { thumb: item.thumb, seed: item.meta.settings.seed, source: item.source || "PNG", filename: item.title, positive: item.meta.positive });
     done();
     toast("Added to " + r.title + "'s results");
     return go("recipe/" + r.id);
@@ -951,12 +951,46 @@ function starButtons(run, where) {
 function resultsHtml(r) {
   const runs = r.runs || [];
   const avg = avgRating(r);
-  return `<div class="sec">Results<span class="aside">${runs.length ? `${runs.length} · ${avg ? stars(avg) + " " + avg.toFixed(1) : "unrated"}` : "none yet"}</span></div>
-    ${runs.length ? `<div class="runs">${runs.map((x) => `<figure class="run${r.coverId === x.id ? " is-cover" : ""}">
-        <button class="run-img" data-act="run-open" data-run="${x.id}" aria-label="Open result"><img src="${esc(x.thumb)}" alt=""></button>
+  const picking = ui.comparing && runs.length > 1;
+  return `<div class="sec">Results<span class="aside">${runs.length > 1 ? `<button class="link" data-act="cmp-toggle">${picking ? "Cancel" : "Compare"}</button> · ` : ""}${runs.length ? `${runs.length} · ${avg ? stars(avg) + " " + avg.toFixed(1) : "unrated"}` : "none yet"}</span></div>
+    ${picking ? `<div class="cmp-bar"><span class="kv">Pick 2 to 4 results · ${ui.cmpPick.length} picked</span><button class="btn sm" data-act="cmp-open">Side by side <i aria-hidden="true">→</i></button></div>` : ""}
+    ${runs.length ? `<div class="runs${picking ? " picking" : ""}">${runs.map((x) => `<figure class="run${r.coverId === x.id ? " is-cover" : ""}${picking && ui.cmpPick.includes(x.id) ? " cmp-on" : ""}">
+        <button class="run-img" data-act="${picking ? "cmp-pick" : "run-open"}" data-run="${x.id}" aria-label="${picking ? "Pick for comparison" : "Open result"}"><img src="${esc(x.thumb)}" alt="">${picking && ui.cmpPick.includes(x.id) ? `<span class="cmp-n">${ui.cmpPick.indexOf(x.id) + 1}</span>` : ""}</button>
         <figcaption>${starButtons(x, "grid")}<span class="kv">${ago(x.at)}</span></figcaption>
       </figure>`).join("")}</div>`
       : `<p class="hint">Images made with this recipe land here: ComfyUI-Prompto captures them automatically, or drop a PNG on the panel and choose <b>Results</b> in the inbox.</p>`}`;
+}
+
+// Side by side: the first pick is the baseline; the others show which tags they added or dropped.
+function drawCompareBox(box, lb) {
+  const r = recipeById(lb.recipeId);
+  const runs = lb.runIds.map((id) => r && r.runs.find((x) => x.id === id)).filter(Boolean);
+  if (runs.length < 2) { ui.lightbox = null; box.hidden = true; box.innerHTML = ""; return; }
+  const base = runs[0];
+  const chips = (ops, op) => ops.filter((o) => o.op === op).map((o) => `<span class="chip ro d-${op}">${esc(o.v)}</span>`).join("");
+  const cell = (x, i) => {
+    let diff = "";
+    if (i === 0) diff = `<p class="kv">baseline</p>`;
+    else if (!x.positive || !base.positive) diff = `<p class="kv">prompt not recorded</p>`;
+    else {
+      const ops = tagDiff(base.positive, x.positive);
+      diff = changed(ops) ? `<div class="chips">${chips(ops, "add")}${chips(ops, "del")}</div>` : `<p class="kv">same prompt</p>`;
+    }
+    return `<figure class="cmp-cell">
+      <img src="${esc(x.thumb)}" alt="">
+      <figcaption>
+        <div class="spread">${starButtons(x, "compare")}<span class="kv">${x.seed != null ? "seed " + esc(x.seed) : ""}</span></div>
+        ${x.seed != null && base.seed != null && i > 0 && String(x.seed) !== String(base.seed) ? `<p class="kv">different seed</p>` : ""}
+        ${diff}
+      </figcaption>
+    </figure>`;
+  };
+  box.hidden = false;
+  box.innerHTML = `<div class="lb-card cmp-card" role="dialog" aria-label="Compare results">
+    <div class="cmp-head spread"><b>${esc(r.title)}</b><button class="link" data-act="lb-close">Close</button></div>
+    <div class="cmp-grid n${runs.length}">${runs.map(cell).join("")}</div>
+    ${base.positive ? `<details class="cmp-prompt"><summary class="kv">Baseline prompt</summary><p class="out-text">${esc(base.positive)}</p></details>` : ""}
+  </div>`;
 }
 
 function drawRefBox(box, lb) {
@@ -988,6 +1022,7 @@ function drawLightbox() {
   const box = $("#lightbox");
   const lb = ui.lightbox;
   if (lb && lb.kind === "ref") return drawRefBox(box, lb);
+  if (lb && lb.kind === "compare") return drawCompareBox(box, lb);
   const r = lb && recipeById(lb.recipeId);
   const run = r && r.runs.find((x) => x.id === lb.runId);
   if (!run) { box.hidden = true; box.innerHTML = ""; return; }
@@ -1107,7 +1142,7 @@ async function syncBridge(tab) {
     if (have.has(item.id)) continue;
     // A capture made from a recipe goes straight to that recipe's results.
     const r = db.settings.autoResults && item.kind === "png" && item.thumb && matchRecipe(item.meta.positive);
-    if (r && addRun(r, { thumb: item.thumb, seed: item.meta.settings.seed, source: item.source, filename: item.title })) { filed.add(r.title); continue; }
+    if (r && addRun(r, { thumb: item.thumb, seed: item.meta.settings.seed, source: item.source, filename: item.title, positive: item.meta.positive })) { filed.add(r.title); continue; }
     fresh.push(item);
   }
   for (const item of fresh) db.inbox.unshift(item);
@@ -1600,6 +1635,17 @@ document.addEventListener("click", async (e) => {
       toast(`Restored v${r.versions.length - r.versions.indexOf(v)}`); break;
     }
     case "run-open": ui.lightbox = { recipeId: r.id, runId: el.dataset.run }; drawLightbox(); break;
+    case "cmp-toggle": ui.comparing = !ui.comparing; ui.cmpPick = []; $("#results").innerHTML = resultsHtml(r); break;
+    case "cmp-pick": {
+      const id = el.dataset.run, at = ui.cmpPick.indexOf(id);
+      if (at >= 0) ui.cmpPick.splice(at, 1);
+      else if (ui.cmpPick.length < 4) ui.cmpPick.push(id);
+      else toast("Four at most");
+      $("#results").innerHTML = resultsHtml(r); break;
+    }
+    case "cmp-open":
+      if (ui.cmpPick.length < 2) return toast("Pick at least two results");
+      ui.lightbox = { kind: "compare", recipeId: r.id, runIds: [...ui.cmpPick] }; drawLightbox(); break;
     case "lb-close": ui.lightbox = null; drawLightbox(); break;
     case "ref-open": ui.lightbox = { kind: "ref", charId: el.dataset.c, refId: el.dataset.ref }; drawLightbox(); break;
     case "ref-step": {
@@ -1637,6 +1683,7 @@ document.addEventListener("click", async (e) => {
     }
     case "run-rate": case "run-cover": case "run-seed": case "run-del": {
       const lr = recipeById((ui.lightbox && ui.lightbox.recipeId) || ui.recipeId);
+      if (!lr) return;
       const run = lr.runs.find((x) => x.id === el.dataset.run);
       if (act === "run-rate") run.rating = run.rating === Number(el.dataset.n) ? 0 : Number(el.dataset.n);
       if (act === "run-cover") { lr.image = run.thumb; lr.coverId = run.id; toast("Cover updated"); }

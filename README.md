@@ -31,7 +31,7 @@ A Chrome side-panel extension for people who make images with Stable Diffusion, 
 | | |
 |---|---|
 | ![Inbox](docs/images/inbox.png) **Inbox** — captures wait here until you file them as recipes, snippets or cast | ![Danbooru import](docs/images/import.png) **Danbooru import** — each character's look, with how often each tag appears on their posts |
-| ![Cast](docs/images/cast.png) **Cast** — reusable characters with outfits, trigger words and LoRAs | ![Profiles](docs/images/profiles.png) **Profiles** — decide how each model's prompt is written: tags or prose, quality tags, negatives |
+| ![Cast](docs/images/cast.png) **Cast** — reusable characters with outfits, trigger words, LoRAs and reference images | ![Profiles](docs/images/profiles.png) **Profiles** — decide how each model's prompt is written: tags or prose, quality tags, negatives |
 
 <sub>Screenshots use sample data. The Danbooru post's artwork is hidden.</sub>
 
@@ -159,6 +159,19 @@ A version is saved each time a recipe leaves Prompto (**Copy prompt**, **Copy fo
 | Danbooru | JSON API | Danbooru related tags |
 | Gelbooru, Safebooru | the tag list on the page (their APIs need accounts or don't give tag types) | Danbooru, by tag name; most names match, and Danbooru resolves common alternate spellings |
 | e621, e926 | JSON API, right-click only | this post only (e621 doesn't offer related tags without an account); species tags count as appearance |
+</details>
+
+<details>
+<summary><b>🖼️ Reference boards</b></summary>
+
+Each cast member has a strip of reference images, and each outfit has its own. To add one:
+
+- **Drop** image files onto a cast card, or onto an outfit's strip in **Edit** mode.
+- **Drag** an image straight out of another web page onto a card; its address is saved.
+- In the inbox, file an image with **Reference…** and pick the character or outfit.
+- Danbooru imports add the post's image automatically.
+
+Click a reference to open it, add a note or source, make it the card's cover, or remove it. Dropped files are stored as 640px copies; images dragged from web pages are kept as links, so they disappear if the site removes them.
 </details>
 
 <details>

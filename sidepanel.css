@@ -364,6 +364,25 @@ button.chip:hover, .chip.edit:hover { border-color: var(--line-2); }
 .ac-dot[data-cat="4"] { background: #3f9b6e; }
 .ac-dot[data-cat="5"] { background: #d39a3d; }
 
+/* ---------- Reference boards ---------- */
+.refs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px; border-radius: 8px; border: 1px dashed transparent; transition: border-color 0.2s, background 0.2s; }
+.char-open .refs { border-color: var(--line-2); min-height: 52px; }
+.refs.mini { padding: 0; margin-top: 8px; }
+.ref { width: 52px; height: 52px; padding: 0; border-radius: 6px; overflow: hidden; box-shadow: 0 0 0 1px var(--line-2); flex: none; }
+.refs.mini .ref { width: 34px; height: 34px; }
+.ref.is-cover { box-shadow: 0 0 0 2px var(--rose); }
+.ref img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ref-drop { font-size: 10.5px; text-transform: uppercase; color: var(--fg-3); padding: 0 6px; }
+.drop-here, .refs.drop-here { outline: 2px dashed var(--rose); outline-offset: 2px; }
+/* tickets are flex columns, so the cover is pinned to the corner instead of floated */
+.tk > .cast-ref-btn { position: absolute; top: 46px; right: 16px; padding: 0; border-radius: 8px; z-index: 2; }
+.cast-ref-btn .cast-ref { float: none; margin: 0; display: block; }
+.has-cover > .tk-title, .has-cover > .tk-title + .chips { padding-right: 72px; }
+.ref-pick { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.ref-pick select { font: inherit; font-size: 11px; border: 1px solid var(--line-2); border-radius: 50px; padding: 4px 8px; background: var(--bg); color: var(--fg); max-width: 100%; }
+.ref-note { border: 0; border-bottom: 1px solid var(--line-2); background: none; outline: none; font-family: var(--mono); font-size: 12px; padding: 4px 0; color: var(--fg); }
+.ref-note:focus { border-color: var(--rose); }
+
 /* ---------- Wildcards ---------- */
 .wild-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px; padding: 6px 8px; border: 1px dashed var(--line-2); border-radius: 8px; }
 .wild-bar .kv { margin-right: auto; }

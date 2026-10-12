@@ -29,7 +29,7 @@ const store = {
 
 let db;
 const ui = {
-  rolls: {}, tab: "inbox", recipeId: null, openChar: null, openProfile: null, q: "", filter: "all", sort: "new", lightbox: null, diffId: null,
+  rolls: {}, refPick: null, tab: "inbox", recipeId: null, openChar: null, openProfile: null, q: "", filter: "all", sort: "new", lightbox: null, diffId: null,
   importId: null, sheet: null,
   comfyLive: false, comfyTab: null, bridge: null, syncedRev: -1, focus: null, pendingImport: null, rev: 0
 };
@@ -43,7 +43,10 @@ function migrate(d) {
   d.settings = { comfyUrl: DEFAULT_COMFY, onlineTags: true, proseTemplates: {}, autoResults: true, ...(d.settings || {}) };
   if (!Array.isArray(d.recentSends)) d.recentSends = [];
   for (const r of d.recipes) { if (!Array.isArray(r.runs)) r.runs = []; if (!Array.isArray(r.versions)) r.versions = []; }
-  for (const c of d.characters) { c.appearance = c.appearance || []; c.outfits = c.outfits || {}; }
+  for (const c of d.characters) {
+    c.appearance = c.appearance || []; c.outfits = c.outfits || {};
+    if (!Array.isArray(c.refs)) c.refs = c.image ? [{ id: "ref_" + c.id, src: c.image, note: "", outfit: null, at: Date.now() }] : [];
+  }
   d.nextNo = Math.max(d.nextNo || 1, ...d.recipes.map((r) => (r.no || 0) + 1));
   d.version = 2;
   return d;
@@ -190,7 +193,12 @@ function slip(item) {
     files = match && item.thumb ? [["results", "Results"], ["recipe", "Recipe"]] : [["recipe", "Recipe"]];
   } else if (item.kind === "image") {
     body = `<img class="slip-thumb" src="${esc(item.image)}" alt="">${item.note ? `<p class="hint" style="margin-top:6px">${esc(item.note)}</p>` : ""}`;
-    files = [["recipe", "Recipe"]];
+    files = db.characters.length ? [["recipe", "Recipe"], ["reference", "Reference…"]] : [["recipe", "Recipe"]];
+    if (ui.refPick === item.id) {
+      body += `<div class="ref-pick"><select data-ref-pick="${item.id}" aria-label="Cast member and outfit">${db.characters.map((c) =>
+        `<option value="${c.id}|">${esc(c.name)}</option>${Object.keys(c.outfits).map((o) => `<option value="${c.id}|${esc(o)}">${esc(c.name)} · ${esc(o)}</option>`).join("")}`).join("")}</select>
+        <button class="btn sm" data-act="ref-file" data-id="${item.id}">Add reference</button></div>`;
+    }
   }
   return `<article class="tk wide">
     <div class="tk-bg"></div>
@@ -241,6 +249,7 @@ function fileItem(id, as) {
   const item = db.inbox.find((i) => i.id === id);
   if (!item) return;
   const done = () => { db.inbox = db.inbox.filter((i) => i.id !== id); persist(); };
+  if (as === "reference") { ui.refPick = ui.refPick === id ? null : id; return draw(); }
   if (as === "results") {
     const r = matchRecipe(item.meta.positive);
     if (!r) return toast("No recipe has this prompt any more");
@@ -412,13 +421,14 @@ function fileSheet() {
         while (target.outfits[name]) name = `${outfitName} ${n++}`;
         target.outfits[name] = { tags: outfit, prose: "" };
       }
-      if (!target.image && post.preview) target.image = post.preview;
+      if (post.preview) addRef(target, post.preview, outfit.length ? Object.keys(target.outfits).pop() : null, post.url || "");
       ids.push(target.id);
     } else {
       const c = {
         id: uid("chr"), name: d.name.trim() || titleCase(d.tag), series: d.series, trigger: d.tag, lora: null,
         appearance, prose: "", outfits: outfit.length ? { [outfitName]: { tags: outfit, prose: "" } } : {},
-        notes: post.url ? "From " + post.url : "", image: post.preview || null
+        notes: post.url ? "From " + post.url : "", image: post.preview || null,
+        refs: post.preview ? [{ id: uid("ref"), src: post.preview, note: post.url || "", outfit: null, at: Date.now() }] : []
       };
       db.characters.unshift(c);
       ids.push(c.id);
@@ -815,9 +825,35 @@ function resultsHtml(r) {
       : `<p class="hint">Images made with this recipe land here: ComfyUI-Prompto captures them automatically, or drop a PNG on the panel and choose <b>Results</b> in the inbox.</p>`}`;
 }
 
+function drawRefBox(box, lb) {
+  const c = charById(lb.charId);
+  const refs = c ? c.refs || [] : [];
+  const ref = refs.find((x) => x.id === lb.refId) || refs[0];
+  if (!ref) { box.hidden = true; box.innerHTML = ""; return; }
+  const i = refs.indexOf(ref);
+  box.hidden = false;
+  box.innerHTML = `<div class="lb-card" role="dialog" aria-label="Reference">
+    <img src="${esc(ref.src)}" alt="">
+    <div class="lb-meta">
+      <div class="spread"><b>${esc(c.name)}${ref.outfit ? " · " + esc(ref.outfit) : ""}</b><span class="kv">${i + 1} of ${refs.length}</span></div>
+      <input class="ref-note" data-ref-note="${ref.id}" data-c="${c.id}" value="${esc(ref.note)}" placeholder="Note or source" spellcheck="false">
+      <div class="actions" style="margin-top:8px">
+        <button class="btn ghost sm" data-act="ref-cover" data-c="${c.id}" data-ref="${ref.id}">${c.image === ref.src ? "Cover ✓" : "Use as cover"}</button>
+        <button class="link" data-act="ref-del" data-c="${c.id}" data-ref="${ref.id}">Remove</button>
+      </div>
+      <div class="spread" style="margin-top:10px">
+        <button class="link" data-act="ref-step" data-d="-1" ${i ? "" : "hidden"}>← Previous</button>
+        <button class="link" data-act="lb-close">Close</button>
+        <button class="link" data-act="ref-step" data-d="1" ${i < refs.length - 1 ? "" : "hidden"}>Next →</button>
+      </div>
+    </div>
+  </div>`;
+}
+
 function drawLightbox() {
   const box = $("#lightbox");
   const lb = ui.lightbox;
+  if (lb && lb.kind === "ref") return drawRefBox(box, lb);
   const r = lb && recipeById(lb.recipeId);
   const run = r && r.runs.find((x) => x.id === lb.runId);
   if (!run) { box.hidden = true; box.innerHTML = ""; return; }
@@ -1001,6 +1037,24 @@ function listTarget(path) {
   const ch = charById(a);
   return b === "appearance" ? ch.appearance : ch.outfits[c].tags;
 }
+// ---------- Reference boards ----------
+function addRef(c, src, outfit = null, note = "") {
+  if (!src) return false;
+  c.refs = c.refs || [];
+  if (c.refs.some((x) => x.src === src && x.outfit === outfit)) return false;
+  c.refs.push({ id: uid("ref"), src, note, outfit, at: Date.now() });
+  if (!c.image) c.image = src;
+  return true;
+}
+function refStrip(c, outfit, editable) {
+  const refs = (c.refs || []).filter((x) => (x.outfit || null) === (outfit || null));
+  if (!refs.length && !editable) return "";
+  return `<div class="refs" data-drop-cast="${c.id}" ${outfit ? `data-drop-outfit="${esc(outfit)}"` : ""}>
+    ${refs.map((x) => `<button class="ref${c.image === x.src ? " is-cover" : ""}" data-act="ref-open" data-c="${c.id}" data-ref="${x.id}" aria-label="Open reference"><img src="${esc(x.src)}" alt="" loading="lazy"></button>`).join("")}
+    ${editable ? `<span class="ref-drop">Drop images here</span>` : ""}
+  </div>`;
+}
+
 const templates = () => db.settings.proseTemplates;
 const castDraft = (c, outfit) => outfit
   ? proseFromTags("outfit", c.outfits[outfit].tags, templates())
@@ -1010,19 +1064,21 @@ function castTicket(c, i) {
   const open = ui.openChar === c.id;
   const ro = (arr) => arr.map((t) => `<span class="chip ro">${esc(t)}</span>`).join("");
   const detail = open ? `<div class="char-open">
+      <div class="group-label">References</div>${refStrip(c, null, true)}
       <div class="group-label">Appearance</div><div class="chips">${strChips(c.appearance, `${c.id}|appearance`)}</div>
       <div class="group-label spread">Prose<button class="link" data-act="cast-draft" data-c="${c.id}">Write from tags</button></div><textarea class="prose" data-cf="prose" data-c="${c.id}" rows="1" placeholder="${esc(castDraft(c) || "a short natural-language description")}">${esc(c.prose)}</textarea>
-      ${Object.entries(c.outfits).map(([o, v]) => `<div class="group-label">Outfit · ${esc(o)}</div><div class="chips">${strChips(v.tags, `${c.id}|outfit|${o}`)}</div>
+      ${Object.entries(c.outfits).map(([o, v]) => `<div class="group-label">Outfit · ${esc(o)}</div>${refStrip(c, o, true)}<div class="chips">${strChips(v.tags, `${c.id}|outfit|${o}`)}</div>
         <div class="row" style="justify-content:flex-end"><button class="link" data-act="cast-draft" data-c="${c.id}" data-o="${esc(o)}">Write from tags</button></div>
         <textarea class="prose" data-cf="outfit-prose" data-o="${esc(o)}" data-c="${c.id}" rows="1" placeholder="${esc(castDraft(c, o) || "what they're wearing, in prose")}">${esc(v.prose)}</textarea>`).join("")}
       <div class="row"><input class="chip-add" data-new-outfit="${c.id}" placeholder="+ outfit name" aria-label="New outfit"></div>
       <div class="group-label">Trigger word</div><textarea class="prose" data-cf="trigger" data-c="${c.id}" rows="1">${esc(c.trigger)}</textarea>
       <div class="group-label">Notes</div><textarea class="prose" data-cf="notes" data-c="${c.id}" rows="1" placeholder="what works, what doesn't">${esc(c.notes)}</textarea>
-    </div>` : `<div class="chips" style="margin-top:10px">${ro(c.appearance.slice(0, 8))}${c.appearance.length > 8 ? `<span class="chip ro">+${c.appearance.length - 8}</span>` : ""}</div>`;
-  return `<article class="tk${i % 2 ? " ink" : ""}" id="c-${c.id}" style="--stub:60px">
+    </div>` : `<div class="chips" style="margin-top:10px">${ro(c.appearance.slice(0, 8))}${c.appearance.length > 8 ? `<span class="chip ro">+${c.appearance.length - 8}</span>` : ""}</div>
+      ${(c.refs || []).length > 1 ? `<div class="refs mini">${c.refs.slice(0, 6).map((x) => `<button class="ref" data-act="ref-open" data-c="${c.id}" data-ref="${x.id}" aria-label="Open reference"><img src="${esc(x.src)}" alt="" loading="lazy"></button>`).join("")}${c.refs.length > 6 ? `<span class="kv">+${c.refs.length - 6}</span>` : ""}</div>` : ""}`;
+  return `<article class="tk${i % 2 ? " ink" : ""}${c.image ? " has-cover" : ""}" id="c-${c.id}" style="--stub:60px" data-drop-cast="${c.id}">
     <div class="tk-bg"><span class="tk-mark">${esc(initials(c.name))}</span></div>
     <div class="tk-head"><span class="tag">${esc(c.series)}</span>${c.trigger ? `<span class="num">trigger <b>${esc(c.trigger)}</b></span>` : ""}</div>
-    ${c.image ? `<img class="cast-ref" src="${esc(c.image)}" alt="">` : ""}
+    ${c.image ? `<button class="cast-ref-btn" data-act="ref-open" data-c="${c.id}" data-ref="${esc(((c.refs || []).find((x) => x.src === c.image) || {}).id || "")}" aria-label="Open references"><img class="cast-ref" src="${esc(c.image)}" alt=""></button>` : ""}
     <h3 class="tk-title">${esc(c.name)}</h3>
     ${detail}
     <div class="group-label">Start a recipe</div>
@@ -1331,6 +1387,34 @@ document.addEventListener("click", async (e) => {
     }
     case "run-open": ui.lightbox = { recipeId: r.id, runId: el.dataset.run }; drawLightbox(); break;
     case "lb-close": ui.lightbox = null; drawLightbox(); break;
+    case "ref-open": ui.lightbox = { kind: "ref", charId: el.dataset.c, refId: el.dataset.ref }; drawLightbox(); break;
+    case "ref-step": {
+      const c = charById(ui.lightbox.charId);
+      const idx = c.refs.findIndex((x) => x.id === ui.lightbox.refId) + Number(el.dataset.d);
+      if (c.refs[idx]) { ui.lightbox.refId = c.refs[idx].id; drawLightbox(); }
+      break;
+    }
+    case "ref-cover": { const c = charById(el.dataset.c); c.image = c.refs.find((x) => x.id === el.dataset.ref).src; persist(); drawLightbox(); if (!ui.recipeId) draw(); toast("Cover updated"); break; }
+    case "ref-del": {
+      if (!armed(el, "Press again")) return;
+      const c = charById(el.dataset.c);
+      const idx = c.refs.findIndex((x) => x.id === el.dataset.ref);
+      const [gone] = c.refs.splice(idx, 1);
+      if (c.image === gone.src) c.image = c.refs[0] ? c.refs[0].src : null;
+      const next = c.refs[idx] || c.refs[idx - 1];
+      ui.lightbox = next ? { kind: "ref", charId: c.id, refId: next.id } : null;
+      persist(); drawLightbox(); if (!ui.recipeId) draw(); break;
+    }
+    case "ref-file": {
+      const item = db.inbox.find((x) => x.id === el.dataset.id);
+      const [cid, outfit] = $(`[data-ref-pick="${el.dataset.id}"]`).value.split("|");
+      const c = charById(cid);
+      addRef(c, item.image, outfit || null, item.url || item.source || "");
+      db.inbox = db.inbox.filter((x) => x.id !== item.id);
+      ui.refPick = null; ui.openChar = c.id; persist();
+      toast(`Added to ${c.name}'s references`);
+      go("cast/" + c.id); break;
+    }
     case "run-step": {
       const lr = recipeById(ui.lightbox.recipeId);
       const idx = lr.runs.findIndex((x) => x.id === ui.lightbox.runId) + Number(el.dataset.d);
@@ -1499,6 +1583,10 @@ document.addEventListener("input", (e) => {
   }
   if (t.classList.contains("prose") && t.dataset.i != null) { r.blocks[t.dataset.i].prose = t.value; persist(); return drawOutput(r); }
   if (t.dataset.pf && t.type !== "checkbox") { db.profiles[t.dataset.p][t.dataset.pf] = t.value; return persist(); }
+  if (t.dataset.refNote) {
+    const ref = charById(t.dataset.c).refs.find((x) => x.id === t.dataset.refNote);
+    ref.note = t.value; return persist();
+  }
   if (t.dataset.tpl) {
     db.settings.proseTemplates[t.dataset.tpl] = t.value;
     persist();
@@ -1593,13 +1681,50 @@ document.addEventListener("pointermove", (e) => {
 // PNG (or library JSON) drop, anywhere on the panel
 const veil = $("#drop-veil");
 let dragDepth = 0;
-const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
-document.addEventListener("dragenter", (e) => { if (hasFiles(e)) { dragDepth++; veil.classList.add("on"); } });
-document.addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; veil.classList.remove("on"); } });
-document.addEventListener("dragover", (e) => { if (hasFiles(e)) e.preventDefault(); });
-document.addEventListener("drop", (e) => {
+const dragTypes = (e) => [...(e.dataTransfer?.types || [])];
+const hasFiles = (e) => dragTypes(e).includes("Files");
+// Images dragged out of another web page arrive as a URL rather than a file.
+const hasImageUrl = (e) => dragTypes(e).includes("text/uri-list") || dragTypes(e).includes("text/html");
+function draggedImageUrl(e) {
+  const html = e.dataTransfer.getData("text/html");
+  const m = html && html.match(/<img[^>]+src="([^"]+)"/i);
+  if (m) return m[1].replace(/&amp;/g, "&");
+  const uri = (e.dataTransfer.getData("text/uri-list") || "").split("\n").find((l) => l && !l.startsWith("#"));
+  return uri && /\.(png|jpe?g|webp|gif|avif)(\?|$)/i.test(uri) ? uri.trim() : null;
+}
+let dropTarget = null;
+function markDrop(e) {
+  const t = e.target.closest && e.target.closest("[data-drop-cast]");
+  if (t === dropTarget) return;
+  if (dropTarget) dropTarget.classList.remove("drop-here");
+  dropTarget = t;
+  if (t) t.classList.add("drop-here");
+  veil.classList.toggle("on", !t && hasFiles(e));
+}
+document.addEventListener("dragenter", (e) => { if (hasFiles(e) || hasImageUrl(e)) { dragDepth++; markDrop(e); } });
+document.addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; veil.classList.remove("on"); if (dropTarget) dropTarget.classList.remove("drop-here"); dropTarget = null; } });
+document.addEventListener("dragover", (e) => {
+  if (!hasFiles(e) && !hasImageUrl(e)) return;
+  markDrop(e);
+  if (hasFiles(e) || dropTarget) e.preventDefault();
+});
+document.addEventListener("drop", async (e) => {
+  const target = e.target.closest && e.target.closest("[data-drop-cast]");
+  dragDepth = 0; veil.classList.remove("on");
+  if (dropTarget) dropTarget.classList.remove("drop-here");
+  dropTarget = null;
+  if (target) {
+    e.preventDefault();
+    const c = charById(target.dataset.dropCast);
+    const outfit = (e.target.closest("[data-drop-outfit]") || {}).dataset?.dropOutfit || null;
+    let added = 0;
+    for (const f of [...e.dataTransfer.files].filter((f) => f.type.startsWith("image/"))) if (addRef(c, await makeThumb(f, 640), outfit, f.name)) added++;
+    if (!added) { const url = draggedImageUrl(e); if (url && addRef(c, url, outfit, url)) added++; }
+    persist(); draw();
+    return toast(added ? `Added ${added} reference${added > 1 ? "s" : ""} to ${c.name}${outfit ? " · " + outfit : ""}` : "Drop an image file or an image from a web page");
+  }
   if (!hasFiles(e)) return;
-  e.preventDefault(); dragDepth = 0; veil.classList.remove("on");
+  e.preventDefault();
   handleFiles([...e.dataTransfer.files]);
 });
 

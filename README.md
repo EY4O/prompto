@@ -17,7 +17,7 @@ A Chrome side-panel extension for people who make images with Stable Diffusion, 
 ## ✨ Key Features
 
 - 📥 **Inbox for everything** — right-click text, an image or a booru post; type `p` and a space in the address bar; or drop a PNG on the panel.
-- 🧬 **Recipes from PNGs** — reads the prompt, negative, model, LoRAs, sampler, steps and seed that ComfyUI and A1111/Forge save inside their images.
+- 🧬 **Recipes and results** — reads the prompt and settings that ComfyUI and A1111/Forge save inside PNGs, and images you make land back on their recipe with ★ ratings.
 - 🧱 **One recipe, every model** — a recipe is made of blocks (subject, character, pose, scene, lighting…) with tags and prose side by side, and model profiles turn it into the right prompt for Illustrious, Anima, Flux Krea or Qwen Image.
 - ✍️ **Prose from tags, no AI** — editable templates turn `1girl, silver hair, twin braids` into "a girl with long silver hair in twin braids" for prose models.
 - 🎭 **Characters from Danbooru** — a **+ Prompto** button on Danbooru posts learns a character's usual look from their solo posts and sorts the tags into appearance and outfit.
@@ -120,6 +120,18 @@ ComfyUI stores the queued graph in a PNG text chunk called `prompt`. A1111 and F
 - **A1111/Forge**: it splits out the negative prompt and settings line, and pulls `<lora:…>` tags out of the prompt.
 
 Images without generation data are kept as reference images.
+</details>
+
+<details>
+<summary><b>⭐ Results and ratings</b></summary>
+
+Each recipe keeps a gallery of the images made from it, up to 60:
+
+- **From ComfyUI**: with ComfyUI-Prompto installed, captured images whose prompt matches a recipe go straight to that recipe's **Results** instead of the inbox. Turn this off in **Settings → ComfyUI**.
+- **From a PNG**: drop it on the panel. If its prompt matches a recipe, the inbox shows **Same prompt as …** and a **Results** button.
+- **Matching**: Prompto remembers what you copied, loaded or queued in the last three days, then compares against every recipe's current prompt. Case, spacing, escaped brackets and trailing commas don't matter.
+
+Click a result to open it larger, rate it, make it the recipe's cover, or copy its seed back into the recipe. Recipe cards show the average rating, and **Recipes** can be sorted by **Top rated** or **Most results**.
 </details>
 
 <details>

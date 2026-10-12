@@ -364,6 +364,28 @@ button.chip:hover, .chip.edit:hover { border-color: var(--line-2); }
 .ac-dot[data-cat="4"] { background: #3f9b6e; }
 .ac-dot[data-cat="5"] { background: #d39a3d; }
 
+/* ---------- Results ---------- */
+.runs { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.run { margin: 0; border-radius: 8px; overflow: hidden; box-shadow: 0 0 0 1px var(--line); background: var(--wash); }
+.run.is-cover { box-shadow: 0 0 0 2px var(--rose); }
+.run-img { display: block; width: 100%; aspect-ratio: 1; padding: 0; }
+.run-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.run figcaption { display: flex; justify-content: space-between; align-items: center; padding: 3px 5px; gap: 4px; }
+.run figcaption .kv { font-size: 9.5px; white-space: nowrap; }
+.stars { display: inline-flex; }
+.stars button { font-size: 13px; line-height: 1; padding: 0 1px; color: var(--fg-3); }
+.stars button[aria-pressed="true"] { color: var(--rose); }
+.stars button:hover { color: var(--fg); }
+.slip-match { margin-top: 6px; font-size: 12px; font-weight: 300; color: var(--fg-2); }
+.slip-match::before { content: "↺ "; color: var(--rose); }
+#sort { font: inherit; font-size: 11px; text-transform: uppercase; border: 0; border-bottom: 1px solid var(--line-2); background: none; color: var(--fg-2); padding: 0 2px; }
+.lightbox { position: fixed; inset: 0; z-index: 25; display: grid; place-items: center; padding: 16px; background: color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter: blur(4px); }
+.lightbox[hidden] { display: none; }
+.lb-card { width: 100%; max-width: 420px; max-height: 100%; overflow: auto; border-radius: 12px; background: var(--bg); box-shadow: 0 0 0 1px var(--line-2), 0 20px 40px -16px rgba(var(--shadow-tint), 0.45); }
+.lb-card img { display: block; width: 100%; max-height: 60vh; object-fit: contain; background: var(--wash); }
+.lb-meta { padding: 12px 14px 14px; display: grid; gap: 4px; }
+.lb-meta .stars button { font-size: 18px; }
+
 /* ---------- Prose templates ---------- */
 .tpl-grid { display: grid; gap: 8px; margin-top: 10px; }
 .tpl-grid label { display: grid; gap: 2px; font-size: 10px; text-transform: uppercase; color: var(--fg-2); }

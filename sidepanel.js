@@ -27,7 +27,7 @@ const store = {
 
 let db;
 const ui = {
-  tab: "inbox", recipeId: null, openChar: null, openProfile: null, q: "", filter: "all",
+  tab: "inbox", recipeId: null, openChar: null, openProfile: null, q: "", filter: "all", sort: "new", lightbox: null,
   importId: null, sheet: null,
   comfyLive: false, comfyTab: null, bridge: null, syncedRev: -1, focus: null, pendingImport: null, rev: 0
 };
@@ -38,7 +38,9 @@ const persist = () => { ui.rev++; clearTimeout(saveTimer); saveTimer = setTimeou
 function migrate(d) {
   for (const k of ["inbox", "recipes", "characters", "snippets"]) if (!Array.isArray(d[k])) d[k] = [];
   if (!d.profiles || !Object.keys(d.profiles).length) d.profiles = structuredClone(DEFAULT_PROFILES);
-  d.settings = { comfyUrl: DEFAULT_COMFY, onlineTags: true, proseTemplates: {}, ...(d.settings || {}) };
+  d.settings = { comfyUrl: DEFAULT_COMFY, onlineTags: true, proseTemplates: {}, autoResults: true, ...(d.settings || {}) };
+  if (!Array.isArray(d.recentSends)) d.recentSends = [];
+  for (const r of d.recipes) if (!Array.isArray(r.runs)) r.runs = [];
   for (const c of d.characters) { c.appearance = c.appearance || []; c.outfits = c.outfits || {}; }
   d.nextNo = Math.max(d.nextNo || 1, ...d.recipes.map((r) => (r.no || 0) + 1));
   d.version = 2;
@@ -134,7 +136,7 @@ $("#theme-btn").addEventListener("click", () => {
 const TABS = ["inbox", "recipes", "characters", "snippets", "settings"];
 function route() {
   const [tab, id] = location.hash.replace(/^#/, "").split("/");
-  ui.recipeId = null; ui.importId = null;
+  ui.recipeId = null; ui.importId = null; ui.lightbox = null; drawLightbox();
   if (tab === "recipe" && id && recipeById(id)) { ui.tab = "recipes"; ui.recipeId = id; }
   else if (tab === "import" && id && db.inbox.some((i) => i.id === id && i.kind === "booru")) { ui.tab = "inbox"; ui.importId = id; }
   else if (tab === "cast") { ui.tab = "characters"; ui.openChar = id || ui.openChar; }
@@ -181,7 +183,9 @@ function slip(item) {
     body = `${item.thumb ? `<img class="slip-thumb" src="${esc(item.thumb)}" alt="">` : ""}
       <p class="slip-text">${esc(item.meta.positive || "(no prompt text found)")}</p>
       <p class="kv" style="margin-top:6px">${esc([s.model, s.sampler, s.steps && s.steps + " steps", s.seed != null && "seed " + s.seed].filter(Boolean).join(" · "))}</p>`;
-    files = [["recipe", "Recipe"]];
+    const match = matchRecipe(item.meta.positive);
+    if (match) body += `<p class="slip-match">Same prompt as <b>${esc(match.title)}</b></p>`;
+    files = match && item.thumb ? [["results", "Results"], ["recipe", "Recipe"]] : [["recipe", "Recipe"]];
   } else if (item.kind === "image") {
     body = `<img class="slip-thumb" src="${esc(item.image)}" alt="">${item.note ? `<p class="hint" style="margin-top:6px">${esc(item.note)}</p>` : ""}`;
     files = [["recipe", "Recipe"]];
@@ -235,6 +239,14 @@ function fileItem(id, as) {
   const item = db.inbox.find((i) => i.id === id);
   if (!item) return;
   const done = () => { db.inbox = db.inbox.filter((i) => i.id !== id); persist(); };
+  if (as === "results") {
+    const r = matchRecipe(item.meta.positive);
+    if (!r) return toast("No recipe has this prompt any more");
+    addRun(r, { thumb: item.thumb, seed: item.meta.settings.seed, source: item.source || "PNG", filename: item.title });
+    done();
+    toast("Added to " + r.title + "'s results");
+    return go("recipe/" + r.id);
+  }
   if (as === "recipe") {
     const r = newRecipe();
     if (item.kind === "text") {
@@ -468,7 +480,7 @@ function recipeTicket(r) {
     <div class="visual">${r.image ? `<img src="${esc(r.image)}" alt="">` : orbs(r.id)}</div>
     <div class="tk-tear"></div>
     <div class="tk-stub">
-      <div><p>${s.width ? s.width + "×" + s.height : "—"} · ${s.steps || "—"} steps</p><p class="mono">seed ${s.seed ?? "—"}</p></div>
+      <div><p>${(r.runs || []).length ? `${avgRating(r) ? stars(avgRating(r)) : "unrated"} · ${r.runs.length} result${r.runs.length > 1 ? "s" : ""}` : `${s.width ? s.width + "×" + s.height : "—"} · ${s.steps || "—"} steps`}</p><p class="mono">seed ${s.seed ?? "—"}</p></div>
       <div class="barcode-wrap">${barcode(r.id)}</div>
     </div>
   </a>`;
@@ -478,13 +490,16 @@ function drawRecipes() {
   if (ui.filter !== "all" && ui.filter !== "fav" && !db.profiles[ui.filter]) ui.filter = "all";
   const list = db.recipes.filter((r) => (ui.filter === "all" || ui.filter === r.profile || (ui.filter === "fav" && r.fav)) &&
     matches(ui.q, r.title, render(r, profileOf(r), db).positive));
+  const SORTS = { new: (a, b) => b.createdAt - a.createdAt, rated: (a, b) => avgRating(b) - avgRating(a) || b.createdAt - a.createdAt, runs: (a, b) => (b.runs || []).length - (a.runs || []).length };
+  list.sort(SORTS[ui.sort] || SORTS.new);
   const f = (id, label) => `<button class="fchip" data-act="filter" data-f="${esc(id)}" aria-pressed="${ui.filter === id}">${esc(label)}</button>`;
   view.innerHTML = `
     <div class="spread">
       <div class="filters">${f("all", "All")}${f("fav", "✦")}${Object.values(db.profiles).map((p) => f(p.id, p.label)).join("")}</div>
       <button class="btn sm" data-act="new-recipe">New <i aria-hidden="true">→</i></button>
     </div>
-    <div class="sec">Recipes<span class="aside">${list.length} of ${db.recipes.length}</span></div>
+    <div class="sec">Recipes<span class="aside">${list.length} of ${db.recipes.length} ·
+      <select id="sort" aria-label="Sort recipes">${[["new", "Newest"], ["rated", "Top rated"], ["runs", "Most results"]].map(([v, l]) => `<option value="${v}" ${ui.sort === v ? "selected" : ""}>${l}</option>`).join("")}</select></span></div>
     ${list.length ? `<div class="grid">${list.map(recipeTicket).join("")}</div>`
       : `<div class="empty"><h3>No <span class="holo-text">match</span></h3><p>Try another filter, or file something from the inbox.</p></div>`}`;
 }
@@ -597,6 +612,7 @@ function drawRecipe() {
     <textarea class="prose" id="neg" rows="1" placeholder="${esc(p.negative ?? "Not used by this profile")}">${esc(r.negative)}</textarea>
 
     <div id="output"></div>
+    <div id="results">${resultsHtml(r)}</div>
 
     <section class="tk settings" style="--stub:0px">
       <div class="tk-bg"></div>
@@ -615,6 +631,82 @@ function drawRecipe() {
 }
 
 const refresh = (r) => { persist(); drawBlocks(r); drawOutput(r); };
+
+// ---------- Results (generation history) ----------
+// Prompts are compared loosely: case, spacing, escaped brackets and trailing
+// punctuation don't stop a match.
+const promptKey = (t) => String(t || "").replace(/\\([()])/g, "$1").toLowerCase().replace(/\s+/g, " ").replace(/[\s,.]+$/, "").trim();
+
+// Remember what was just sent out, so an image made from it finds its recipe.
+function noteSend(r, positive) {
+  db.recentSends = [{ recipeId: r.id, key: promptKey(positive), at: Date.now() }, ...db.recentSends.filter((x) => x.recipeId !== r.id)].slice(0, 20);
+  persist();
+}
+
+function matchRecipe(positive) {
+  const key = promptKey(positive);
+  if (!key) return null;
+  const sent = db.recentSends.find((x) => x.key === key && Date.now() - x.at < 3 * 864e5);
+  if (sent && recipeById(sent.recipeId)) return recipeById(sent.recipeId);
+  return db.recipes.find((r) => promptKey(render(r, profileOf(r), db).positive) === key) || null;
+}
+
+function addRun(r, run) {
+  if (!run.thumb) return false;
+  r.runs = r.runs || [];
+  if (run.filename && r.runs.some((x) => x.filename === run.filename && x.source === run.source)) return false;
+  r.runs.unshift({ id: uid("run"), at: Date.now(), rating: 0, ...run });
+  r.runs = r.runs.slice(0, 60);
+  if (!r.image) { r.image = run.thumb; r.coverId = r.runs[0].id; }
+  return true;
+}
+
+const rated = (r) => (r.runs || []).filter((x) => x.rating);
+const avgRating = (r) => { const xs = rated(r); return xs.length ? xs.reduce((n, x) => n + x.rating, 0) / xs.length : 0; };
+const stars = (n) => "★★★★★".slice(0, Math.round(n)) + "☆☆☆☆☆".slice(0, 5 - Math.round(n));
+
+function starButtons(run, where) {
+  return `<span class="stars" role="group" aria-label="Rating">${[1, 2, 3, 4, 5].map((n) =>
+    `<button data-act="run-rate" data-run="${run.id}" data-n="${n}" data-where="${where}" aria-label="${n} star${n > 1 ? "s" : ""}" aria-pressed="${run.rating >= n}">${run.rating >= n ? "★" : "☆"}</button>`).join("")}</span>`;
+}
+
+function resultsHtml(r) {
+  const runs = r.runs || [];
+  const avg = avgRating(r);
+  return `<div class="sec">Results<span class="aside">${runs.length ? `${runs.length} · ${avg ? stars(avg) + " " + avg.toFixed(1) : "unrated"}` : "none yet"}</span></div>
+    ${runs.length ? `<div class="runs">${runs.map((x) => `<figure class="run${r.coverId === x.id ? " is-cover" : ""}">
+        <button class="run-img" data-act="run-open" data-run="${x.id}" aria-label="Open result"><img src="${esc(x.thumb)}" alt=""></button>
+        <figcaption>${starButtons(x, "grid")}<span class="kv">${ago(x.at)}</span></figcaption>
+      </figure>`).join("")}</div>`
+      : `<p class="hint">Images made with this recipe land here: ComfyUI-Prompto captures them automatically, or drop a PNG on the panel and choose <b>Results</b> in the inbox.</p>`}`;
+}
+
+function drawLightbox() {
+  const box = $("#lightbox");
+  const lb = ui.lightbox;
+  const r = lb && recipeById(lb.recipeId);
+  const run = r && r.runs.find((x) => x.id === lb.runId);
+  if (!run) { box.hidden = true; box.innerHTML = ""; return; }
+  const i = r.runs.indexOf(run);
+  box.hidden = false;
+  box.innerHTML = `<div class="lb-card" role="dialog" aria-label="Result">
+    <img src="${esc(run.thumb)}" alt="">
+    <div class="lb-meta">
+      <div class="spread">${starButtons(run, "lightbox")}<span class="kv">${i + 1} of ${r.runs.length}</span></div>
+      <p class="kv">${esc([run.source, run.seed != null && "seed " + run.seed, new Date(run.at).toLocaleString()].filter(Boolean).join(" · "))}</p>
+      <div class="actions" style="margin-top:8px">
+        <button class="btn ghost sm" data-act="run-cover" data-run="${run.id}">${r.coverId === run.id ? "Cover ✓" : "Use as cover"}</button>
+        ${run.seed != null ? `<button class="btn ghost sm" data-act="run-seed" data-run="${run.id}">Use seed</button>` : ""}
+        <button class="link" data-act="run-del" data-run="${run.id}">Remove</button>
+      </div>
+      <div class="spread" style="margin-top:10px">
+        <button class="link" data-act="run-step" data-d="-1" ${i ? "" : "hidden"}>← Newer</button>
+        <button class="link" data-act="lb-close">Close</button>
+        <button class="link" data-act="run-step" data-d="1" ${i < r.runs.length - 1 ? "" : "hidden"}>Older →</button>
+      </div>
+    </div>
+  </div>`;
+}
 
 // ---------- ComfyUI ----------
 const comfyBase = () => db.settings.comfyUrl || DEFAULT_COMFY;
@@ -681,8 +773,19 @@ async function syncBridge(tab) {
   const caps = await bridgeCall(tab.id, "takeCaptures").catch(() => null);
   if (!Array.isArray(caps) || !caps.length) return;
   const have = new Set(db.inbox.map((i) => i.id));
-  const fresh = caps.map(captureToInbox).filter((i) => !have.has(i.id));
+  const fresh = [], filed = new Set();
+  for (const item of caps.map(captureToInbox)) {
+    if (have.has(item.id)) continue;
+    // A capture made from a recipe goes straight to that recipe's results.
+    const r = db.settings.autoResults && item.kind === "png" && item.thumb && matchRecipe(item.meta.positive);
+    if (r && addRun(r, { thumb: item.thumb, seed: item.meta.settings.seed, source: item.source, filename: item.title })) { filed.add(r.title); continue; }
+    fresh.push(item);
+  }
   for (const item of fresh) db.inbox.unshift(item);
+  if (filed.size) {
+    toast("Added to results: " + [...filed].join(", "));
+    if (ui.recipeId) { const el = $("#results"); if (el) el.innerHTML = resultsHtml(recipeById(ui.recipeId)); }
+  }
   await store.save(db);
   await bridgeCall(tab.id, "ackCaptures", [caps.map((c) => c.id)]).catch(() => null);
   persist();
@@ -871,6 +974,7 @@ function drawSettings() {
         <label class="full">Address<input id="comfy-url" value="${esc(comfyBase())}" spellcheck="false" placeholder="${DEFAULT_COMFY}"></label>
       </div>
       <div class="row" style="margin-top:10px"><button class="btn ghost sm" data-act="comfy-save">Save address</button></div>
+      <label class="check" style="margin-top:10px"><input type="checkbox" data-setting="autoResults" ${db.settings.autoResults ? "checked" : ""}> File captures made from a recipe straight into its results</label>
       <p class="hint" style="margin-top:8px">Loading into a workflow needs ComfyUI open in a browser tab. The desktop app runs on port 8000 and only supports queueing saved graphs.</p>
       <p class="kv" style="margin-top:8px">${ui.bridge ? `ComfyUI-Prompto ${esc(ui.bridge)} is installed: your library syncs to its sidebar and captures from ComfyUI land in the inbox.`
         : "Install ComfyUI-Prompto in ComfyUI for a Prompto sidebar there, right-click “Save to Prompto”, and auto-capture of saved images."}</p>
@@ -951,6 +1055,7 @@ attachAutocomplete({
 
 // ---------- Events ----------
 document.addEventListener("click", async (e) => {
+  if (e.target.id === "lightbox") { ui.lightbox = null; return drawLightbox(); }
   const tabBtn = e.target.closest("#tabs button");
   if (tabBtn) return go(tabBtn.dataset.tab);
   if (e.target.closest("#settings-btn")) return go("settings");
@@ -1025,15 +1130,42 @@ document.addEventListener("click", async (e) => {
       r.blocks.push({ type: $("#add-type").value, tags: [], prose: "" });
       refresh(r); $(`.chip-add[data-i="${r.blocks.length - 1}"]`)?.focus(); break;
     }
-    case "copy-pos": copy(render(r, profileOf(r), db).positive, "Prompt copied"); break;
+    case "copy-pos": { const pos = render(r, profileOf(r), db).positive; noteSend(r, pos); copy(pos, "Prompt copied"); break; }
     case "copy-neg": copy(render(r, profileOf(r), db).negative || "", "Negative copied"); break;
-    case "copy-a1111": copy(toA1111(r, profileOf(r), db), "Copied. Paste it into Forge, then press ↙"); break;
+    case "copy-a1111": noteSend(r, render(r, profileOf(r), db).positive); copy(toA1111(r, profileOf(r), db), "Copied. Paste it into Forge, then press ↙"); break;
     case "comfy-load": {
       const out = render(r, profileOf(r), db);
+      noteSend(r, out.positive);
       return withComfyTab({ mode: "recipe", positive: out.positive, negative: out.negative, settings: r.settings }, "Loaded");
     }
-    case "comfy-node": return withComfyTab({ mode: "selected", text: render(r, profileOf(r), db).positive, append: false }, "Sent");
-    case "send-comfy": return queueSaved(r);
+    case "comfy-node": { const pos = render(r, profileOf(r), db).positive; noteSend(r, pos); return withComfyTab({ mode: "selected", text: pos, append: false }, "Sent"); }
+    case "send-comfy": noteSend(r, render(r, profileOf(r), db).positive); return queueSaved(r);
+    case "run-open": ui.lightbox = { recipeId: r.id, runId: el.dataset.run }; drawLightbox(); break;
+    case "lb-close": ui.lightbox = null; drawLightbox(); break;
+    case "run-step": {
+      const lr = recipeById(ui.lightbox.recipeId);
+      const idx = lr.runs.findIndex((x) => x.id === ui.lightbox.runId) + Number(el.dataset.d);
+      if (lr.runs[idx]) { ui.lightbox.runId = lr.runs[idx].id; drawLightbox(); }
+      break;
+    }
+    case "run-rate": case "run-cover": case "run-seed": case "run-del": {
+      const lr = recipeById((ui.lightbox && ui.lightbox.recipeId) || ui.recipeId);
+      const run = lr.runs.find((x) => x.id === el.dataset.run);
+      if (act === "run-rate") run.rating = run.rating === Number(el.dataset.n) ? 0 : Number(el.dataset.n);
+      if (act === "run-cover") { lr.image = run.thumb; lr.coverId = run.id; toast("Cover updated"); }
+      if (act === "run-seed") { lr.settings.seed = run.seed; toast("Seed set to " + run.seed); }
+      if (act === "run-del") {
+        if (!armed(el, "Press again")) return;
+        const idx = lr.runs.indexOf(run);
+        lr.runs.splice(idx, 1);
+        if (lr.coverId === run.id) { lr.coverId = null; lr.image = lr.runs[0] ? lr.runs[0].thumb : lr.image; }
+        ui.lightbox = lr.runs[idx] || lr.runs[idx - 1] ? { recipeId: lr.id, runId: (lr.runs[idx] || lr.runs[idx - 1]).id } : null;
+      }
+      persist();
+      if (ui.recipeId === lr.id) { if (act === "run-seed") drawRecipe(); else $("#results").innerHTML = resultsHtml(lr); }
+      drawLightbox();
+      break;
+    }
     case "cast-toggle": ui.openChar = ui.openChar === el.dataset.c ? null : el.dataset.c; draw(); break;
     case "cast-recipe": {
       const c = charById(el.dataset.c);
@@ -1119,6 +1251,7 @@ document.addEventListener("change", async (e) => {
   const t = e.target;
   const r = ui.recipeId && recipeById(ui.recipeId);
   if (t.id === "cap-file") return handleFiles([...t.files]);
+  if (t.id === "sort") { ui.sort = t.value; return draw(); }
   if (t.id === "import-file") return t.files[0] && readImport(t.files[0]);
   if (t.id === "tag-file" && t.files[0]) {
     toast("Reading tag list…");
@@ -1187,6 +1320,7 @@ document.addEventListener("input", (e) => {
 
 document.addEventListener("keydown", (e) => {
   const t = e.target;
+  if (e.key === "Escape" && ui.lightbox) { ui.lightbox = null; return drawLightbox(); }
   if (t.id === "cap-text" && e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); return $('[data-act="capture"]').click(); }
   if (t.classList.contains("chip-add") && e.key === "Enter") {
     e.preventDefault();

@@ -293,6 +293,12 @@ function fileItem(id, as) {
 }
 
 // ---------- Danbooru import sheet ----------
+const SITE_NAMES = { "danbooru.donmai.us": "Danbooru", "safebooru.donmai.us": "Danbooru", "gelbooru.com": "Gelbooru", "safebooru.org": "Safebooru", "e621.net": "e621", "e926.net": "e926" };
+function siteName(post) {
+  let host = post.site || "";
+  try { host = host || new URL(post.url).hostname; } catch {}
+  return SITE_NAMES[host.replace(/^www\./, "")] || "Booru post";
+}
 const postOf = (item) => item.post || postFromGroups(item);
 const normTag = (t) => String(t || "").toLowerCase().replace(/_/g, " ").trim();
 const castByTrigger = (tag) => db.characters.find((c) => c.trigger && normTag(c.trigger) === normTag(tag));
@@ -363,7 +369,7 @@ function drawImport() {
     <article class="tk wide" style="--stubw:96px">
       <div class="tk-bg"></div>
       <div class="tk-main">
-        <div class="row"><span class="tag">${post.id ? "Danbooru #" + post.id : "Booru post"}</span><span class="slip-src">${esc(post.artists.join(", "))}</span></div>
+        <div class="row"><span class="tag">${esc(siteName(post))}${post.id ? " #" + post.id : ""}</span><span class="slip-src">${esc(post.artists.join(", "))}</span></div>
         <h3 class="tk-title" style="font-size:22px">${esc(post.characters.map((c) => titleCase(c.replace(/\s*\(.*\)$/, ""))).join(" · ") || "No characters")}</h3>
         <p class="kv" style="margin-top:6px">${esc(post.copyrights.map(titleCase).join(", "))}</p>
       </div>

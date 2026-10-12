@@ -1,6 +1,6 @@
 // Capture plumbing. Everything captured here lands in `captures`; the side
 // panel drains that queue into its inbox, so the two never overwrite each other.
-import { postIdFromUrl, fetchPost } from "./lib/booru.js";
+import { postIdFromUrl, fetchPost, e621IdFromUrl, fetchE621 } from "./lib/booru.js";
 import { imageIdFromUrl, fetchCivitaiImage, civitaiToRecipe, smallImage } from "./lib/civitai.js";
 
 const CIVITAI_PATTERNS = ["https://civitai.com/*", "https://civitai.green/*", "https://civitai.red/*"];
@@ -9,7 +9,9 @@ const BOORU_PATTERNS = [
   "https://danbooru.donmai.us/*",
   "https://safebooru.donmai.us/*",
   "https://gelbooru.com/*",
-  "https://safebooru.org/*"
+  "https://safebooru.org/*",
+  "https://e621.net/*",
+  "https://e926.net/*"
 ];
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -64,6 +66,12 @@ function scrapeBooruTags() {
 }
 
 // Danbooru posts come from the JSON API: exact categories, no page scraping.
+async function captureE621(ref, extra = {}) {
+  const post = await fetchE621(ref.host, ref.id);
+  await pushCapture({ kind: "booru", post, url: post.url, source: post.site, title: post.characters.join(", ") || "Post " + post.id, ...extra });
+  return post;
+}
+
 async function captureDanbooru(ref, extra = {}) {
   const post = await fetchPost(ref.host, ref.id);
   await pushCapture({ kind: "booru", post, url: post.url, source: new URL(ref.host).hostname, title: post.characters.join(", ") || "Post " + post.id, ...extra });
@@ -83,6 +91,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     const ref = postIdFromUrl(info.linkUrl || "") || postIdFromUrl(tab.url);
     try {
       if (ref) return void (await captureDanbooru(ref));
+      const e6 = e621IdFromUrl(info.linkUrl || "") || e621IdFromUrl(tab.url);
+      if (e6) return void (await captureE621(e6));
       const [{ result }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: scrapeBooruTags });
       await pushCapture({ kind: "booru", groups: result.groups, title: result.title, url: tab.url, source, image: info.srcUrl || result.image });
     } catch (e) {
@@ -112,9 +122,18 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (!msg || msg.type !== "prompto:character") return;
   // Open the panel first, while the click still counts as a user gesture.
   if (sender.tab) chrome.sidePanel.open({ tabId: sender.tab.id }).catch(() => {});
+  const extra = { focus: msg.tag || null, openSheet: true };
+  // Gelbooru-style pages send the tag groups they already show.
+  if (msg.groups) {
+    const source = new URL(msg.url).hostname.replace(/^www\./, "");
+    pushCapture({ kind: "booru", groups: msg.groups, title: msg.title, url: msg.url, source, image: msg.image, ...extra })
+      .then(() => reply({ ok: true }))
+      .catch((e) => reply({ ok: false, error: e.message }));
+    return true;
+  }
   const ref = postIdFromUrl(msg.url);
   if (!ref) { reply({ ok: false, error: "Not a Danbooru post" }); return; }
-  captureDanbooru(ref, { focus: msg.tag || null, openSheet: true })
+  captureDanbooru(ref, extra)
     .then(() => reply({ ok: true }))
     .catch((e) => reply({ ok: false, error: e.message }));
   return true; // reply asynchronously

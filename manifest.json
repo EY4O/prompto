@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Prompto",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Capture, organize and remix Stable Diffusion prompts, image recipes and character tags.",
   "minimum_chrome_version": "116",
   "permissions": [
@@ -18,7 +18,11 @@
     "https://*.donmai.us/*",
     "https://civitai.com/*",
     "https://civitai.green/*",
-    "https://civitai.red/*"
+    "https://civitai.red/*",
+    "https://e621.net/*",
+    "https://e926.net/*",
+    "https://gelbooru.com/*",
+    "https://safebooru.org/*"
   ],
   "optional_host_permissions": [
     "http://*/*",
@@ -32,10 +36,12 @@
     {
       "matches": [
         "https://danbooru.donmai.us/posts/*",
-        "https://safebooru.donmai.us/posts/*"
+        "https://safebooru.donmai.us/posts/*",
+        "https://gelbooru.com/index.php*",
+        "https://safebooru.org/index.php*"
       ],
       "js": [
-        "content/danbooru.js"
+        "content/booru.js"
       ],
       "run_at": "document_idle"
     }

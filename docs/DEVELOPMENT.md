@@ -5,12 +5,15 @@ The repository root is the extension: Chrome loads `manifest.json` from it direc
 ```
 manifest.json        MV3 manifest; `version` is bumped with every change
 background.js        service worker (module): context menus, omnibox, Danbooru capture, + Prompto messages
-content/danbooru.js  adds the + Prompto button to character tags on Danbooru post pages
+content/booru.js     adds the + Prompto button to character tags on Danbooru, Gelbooru and Safebooru posts
 sidepanel.html/.css  the side panel
 sidepanel.js         views, routing and events for the side panel
 lib/render.js        model profiles, block rendering, linter, Forge export
 lib/pngmeta.js       PNG text-chunk reader, ComfyUI graph and A1111 parameter parsing
-lib/booru.js         Danbooru posts, character looks (related tags) and tag sorting
+lib/booru.js         Danbooru and e621 posts, character looks (related tags) and tag sorting
+lib/civitai.js       Civitai image recipes from its images API
+lib/prose.js         tags → prose templates
+lib/diff.js          tag and word diffs for recipe versions
 lib/tags.js          tag list (CSV → IndexedDB), library tags, Danbooru tag lookups
 lib/autocomplete.js  the tag suggestion dropdown
 lib/comfy.js         ComfyUI heartbeat, tab bridge, in-page graph editing, queueing
@@ -34,7 +37,7 @@ There's no automated suite yet. The parsing and rendering modules (`lib/render.j
 node -e "import('./lib/render.js').then(m => console.log(Object.keys(m.DEFAULT_PROFILES)))"
 ```
 
-Danbooru rejects Node's default user agent, so pass a `User-Agent` header when testing `lib/booru.js` from Node.
+Danbooru and e621 reject Node's default fetch, so pass a `User-Agent` header (Danbooru) or feed saved JSON from `curl` (e621) when testing from Node.
 
 ## Releasing
 

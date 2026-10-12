@@ -20,7 +20,7 @@ A Chrome side-panel extension for people who make images with Stable Diffusion, 
 - 🧬 **Recipes, results and versions** — reads the prompt and settings inside ComfyUI and A1111/Forge PNGs; images you make land back on their recipe with ★ ratings, and every run is versioned so you can compare what changed.
 - 🧱 **One recipe, every model** — a recipe is made of blocks (subject, character, pose, scene, lighting…) with tags and prose side by side, and model profiles turn it into the right prompt for Illustrious, Anima, Flux Krea or Qwen Image.
 - ✍️ **Prose from tags, no AI** — editable templates turn `1girl, silver hair, twin braids` into "a girl with long silver hair in twin braids" for prose models.
-- 🎭 **Characters from Danbooru** — a **+ Prompto** button on Danbooru posts learns a character's usual look from their solo posts and sorts the tags into appearance and outfit.
+- 🎭 **Characters from boorus** — a **+ Prompto** button on Danbooru, Gelbooru and Safebooru posts (and right-click on e621) learns a character's usual look from their solo posts and sorts the tags into appearance and outfit.
 - ⌨️ **Tag autocomplete** — suggestions from your own library, an imported Danbooru tag list (with post counts and aliases), and live Danbooru lookups.
 - 🎚️ **Prompt tools** — scroll over a tag to weight it, a CLIP token counter, and a checker for duplicates, contradictions and over-weighted tags.
 - 🔗 **ComfyUI and Forge** — load a recipe, LoRAs included, straight into the open ComfyUI workflow, or copy it in Forge's format and fill in every setting with one click.
@@ -152,7 +152,13 @@ A version is saved each time a recipe leaves Prompto (**Copy prompt**, **Copy fo
 - When a post has several characters, each of the post's tags goes to whichever character Danbooru links it to most strongly, so one character doesn't get another's hair colour.
 - Tags are sorted by simple word rules (hair, eyes, ears → appearance; dress, gloves, earrings → outfit; scene and framing → skip). Click any tag to move it.
 - If the character is already in your cast, you can add the post's clothes as a new outfit instead of making a duplicate.
-- Looks are cached for a week. Gelbooru posts are read from the page, and their characters are looked up on Danbooru by name.
+- Looks are cached for a week.
+
+| Site | How the post is read | Character look |
+|---|---|---|
+| Danbooru | JSON API | Danbooru related tags |
+| Gelbooru, Safebooru | the tag list on the page (their APIs need accounts or don't give tag types) | Danbooru, by tag name; most names match, and Danbooru resolves common alternate spellings |
+| e621, e926 | JSON API, right-click only | this post only (e621 doesn't offer related tags without an account); species tags count as appearance |
 </details>
 
 <details>
@@ -191,7 +197,7 @@ Underscores become spaces, except in emoticons such as `^_^`.
 
 - Your library lives in `chrome.storage.local`; the imported tag list lives in IndexedDB. Use **Settings → Library → Export** for a backup. The tag list isn't included.
 - Network requests go only to Danbooru (posts, related tags and optional tag lookups), Civitai's images API (when you import from Civitai), your ComfyUI address, and Google Fonts for the panel's typefaces.
-- Permissions: **side panel**, **storage** and **unlimited storage** for the library and images; **context menus** for right-click capture; **scripting** and **active tab** to read booru pages and reach the ComfyUI tab; access to `localhost`/`127.0.0.1` (ComfyUI), `*.donmai.us` (Danbooru) and `civitai.com` (Civitai). Other ComfyUI addresses are requested when you save them.
+- Permissions: **side panel**, **storage** and **unlimited storage** for the library and images; **context menus** for right-click capture; **scripting** and **active tab** to read booru pages and reach the ComfyUI tab; access to `localhost`/`127.0.0.1` (ComfyUI), `*.donmai.us`, `gelbooru.com`, `safebooru.org`, `e621.net`/`e926.net` (boorus) and `civitai.com` (Civitai). Other ComfyUI addresses are requested when you save them.
 - Prompto never queues anything on its own. Deleting a recipe, profile or tag list takes a second press to confirm.
 </details>
 

@@ -3,8 +3,8 @@ import { DEFAULT_TEMPLATES, SLOT_HELP, proseFromTags } from "./lib/prose.js";
 import { readRecipeFromFile, parseComfy } from "./lib/pngmeta.js";
 import { fromMeta as toRecipe1 } from "./lib/recipe1.js";
 import { SEED } from "./lib/seed.js";
-import { removeCharacter } from "./lib/cast.js";
-import { wildcardToken, findDuplicate, duplicateGroups, uniqueName, guessCategory, recipesUsing, renameSnippet, renameCategory, mergeSnippets, removeSnippet } from "./lib/snippets.js";
+import { removeCharacter, sortCast, seriesOf } from "./lib/cast.js";
+import { wildcardToken, findDuplicate, duplicateGroups, sortSnippets, uniqueName, guessCategory, recipesUsing, renameSnippet, renameCategory, mergeSnippets, removeSnippet } from "./lib/snippets.js";
 import { snapshotLists, restoreLists } from "./lib/undo.js";
 import { loadTagList, importTagCsv, clearTagList, tagListInfo, searchLocal, libraryTags, searchLibrary, searchDanbooru } from "./lib/tags.js";
 import { attachAutocomplete } from "./lib/autocomplete.js";
@@ -38,7 +38,7 @@ const store = {
 let db;
 const ui = {
   sync: { handle: null, state: "off", at: 0, error: "", busy: false, timer: 0 },
-  rolls: {}, comparing: false, cmpPick: [], refPick: null, pendingForeign: null, folder: "all", picking: false, picked: new Set(), renamingFolder: null, tab: "inbox", recipeId: null, openChar: null, openSnip: null, renamingCat: null, openProfile: null, q: "", filter: "all", sort: "new", lightbox: null, diffId: null,
+  rolls: {}, comparing: false, cmpPick: [], refPick: null, pendingForeign: null, folder: "all", picking: false, picked: new Set(), renamingFolder: null, tab: "inbox", recipeId: null, openChar: null, openSnip: null, renamingCat: null, castSeries: "all", castSort: "added", snipCat: "all", snipSort: "added", openProfile: null, q: "", filter: "all", sort: "new", lightbox: null, diffId: null,
   importId: null, sheet: null,
   comfyLive: false, comfyTab: null, bridge: null, syncedRev: -1, focus: null, pendingImport: null, rev: 0
 };
@@ -177,8 +177,8 @@ function route() {
   ui.recipeId = null; ui.importId = null; ui.lightbox = null; ui.diffId = null; ui.comparing = false; ui.cmpPick = []; drawLightbox();
   if (tab === "recipe" && id && recipeById(id)) { ui.tab = "recipes"; ui.recipeId = id; }
   else if (tab === "import" && id && db.inbox.some((i) => i.id === id && i.kind === "booru")) { ui.tab = "inbox"; ui.importId = id; }
-  else if (tab === "cast") { ui.tab = "characters"; ui.openChar = id || ui.openChar; }
-  else if (tab === "snippet") { ui.tab = "snippets"; ui.openSnip = id || ui.openSnip; }
+  else if (tab === "cast") { ui.tab = "characters"; ui.openChar = id || ui.openChar; if (id) ui.castSeries = "all"; }
+  else if (tab === "snippet") { ui.tab = "snippets"; ui.openSnip = id || ui.openSnip; if (id) ui.snipCat = "all"; }
   else if (TABS.includes(tab)) ui.tab = tab;
   draw();
   if (tab === "cast" && id) requestAnimationFrame(() => $("#c-" + id)?.scrollIntoView({ block: "start", behavior: "smooth" }));
@@ -1382,13 +1382,23 @@ function castTicket(c, i) {
     </div>
   </article>`;
 }
+// The sort menu shared by the Cast and Snippets tabs.
+const sortSelect = (id, value, label) => `<select id="${id}" aria-label="${label}">${[["added", "Recently added"], ["az", "A–Z"], ["used", "Most used"]].map(([v, l]) => `<option value="${v}" ${value === v ? "selected" : ""}>${l}</option>`).join("")}</select>`;
+const filterChip = (act, cur) => (id, label) => `<button class="fchip" data-act="${act}" data-f="${esc(id)}" aria-pressed="${cur === id}">${esc(label)}</button>`;
+
 function drawCast() {
-  const list = db.characters.filter((c) => matches(ui.q, c.name, c.series, c.trigger, c.appearance.join(" ")));
+  const series = [...new Set(db.characters.map(seriesOf))];
+  if (ui.castSeries !== "all" && !series.includes(ui.castSeries)) ui.castSeries = "all";
+  const list = sortCast(db.characters.filter((c) => (ui.castSeries === "all" || seriesOf(c) === ui.castSeries)
+    && matches(ui.q, c.name, c.series, c.trigger, c.appearance.join(" "))), db, ui.castSort);
+  const f = filterChip("cast-filter", ui.castSeries);
   view.innerHTML = `
     <div class="spread"><p class="hint">Reusable characters. A recipe pulls in the latest tags each time.</p>
       <button class="btn sm" data-act="new-cast">New <i aria-hidden="true">→</i></button></div>
-    <div class="sec">Cast<span class="aside">${list.length}</span></div>
-    <div class="stack" style="gap:18px">${list.map(castTicket).join("")}</div>`;
+    ${series.length > 1 ? `<div class="filters" style="margin-top:12px">${f("all", "All")}${series.map((x) => f(x, x)).join("")}</div>` : ""}
+    <div class="sec">Cast<span class="aside">${list.length === db.characters.length ? list.length : `${list.length} of ${db.characters.length}`} · ${sortSelect("cast-sort", ui.castSort, "Sort the cast")}</span></div>
+    ${list.length ? `<div class="stack" style="gap:18px">${list.map(castTicket).join("")}</div>`
+      : `<div class="empty"><h3>No <span class="holo-text">match</span></h3><p>Try another series, or clear the search.</p></div>`}`;
 }
 
 // ---------- Snippets ----------
@@ -1414,9 +1424,17 @@ function snippetCard(x) {
   </div>`;
 }
 function drawSnippets() {
-  const list = db.snippets.filter((x) => x.id === ui.openSnip || matches(ui.q, x.name, x.cat, x.tags.join(" "), x.prose));
-  const cats = [...new Set(list.map((x) => x.cat))];
-  view.innerHTML = (cats.length ? cats.map((cat) => {
+  const all = [...new Set(db.snippets.map((x) => x.cat))];
+  if (ui.snipCat !== "all" && !all.includes(ui.snipCat)) ui.snipCat = "all";
+  const list = sortSnippets(db.snippets.filter((x) => x.id === ui.openSnip
+    || ((ui.snipCat === "all" || x.cat === ui.snipCat) && matches(ui.q, x.name, x.cat, x.tags.join(" "), x.prose))), db, ui.snipSort);
+  // Categories keep the order they first appear in the library, whatever the sort.
+  const cats = all.filter((c) => list.some((x) => x.cat === c));
+  const f = filterChip("snip-filter", ui.snipCat);
+  view.innerHTML = `<div class="spread snip-bar">
+      <div class="filters">${all.length > 1 ? f("all", "All") + all.map((c) => f(c, c)).join("") : ""}</div>
+      ${sortSelect("snip-sort", ui.snipSort, "Sort snippets")}
+    </div>` + (cats.length ? cats.map((cat) => {
     const items = list.filter((x) => x.cat === cat);
     const head = ui.renamingCat === cat
       ? `<div class="sec cat-edit"><input class="folder-name" id="cat-name" value="${esc(cat)}" aria-label="Category name" spellcheck="false"><button class="link" data-act="cat-rename-save">Save</button></div>`
@@ -1702,6 +1720,8 @@ document.addEventListener("click", async (e) => {
     case "sheet-file": return fileSheet();
     case "discard": db.inbox = db.inbox.filter((x) => x.id !== el.dataset.id); persist(); draw(); toast("Discarded"); break;
     case "filter": ui.filter = el.dataset.f; draw(); break;
+    case "cast-filter": ui.castSeries = el.dataset.f; draw(); break;
+    case "snip-filter": ui.snipCat = el.dataset.f; ui.renamingCat = null; draw(); break;
     case "new-recipe": { const n = newRecipe(); if (folderById(ui.folder)) n.folder = ui.folder; db.recipes.unshift(n); persist(); go("recipe/" + n.id); break; }
     case "folder": ui.folder = el.dataset.f; ui.renamingFolder = null; draw(); break;
     case "folder-new": {
@@ -2016,6 +2036,8 @@ document.addEventListener("change", async (e) => {
     return;
   }
   if (t.id === "sort") { ui.sort = t.value; return draw(); }
+  if (t.id === "cast-sort") { ui.castSort = t.value; return draw(); }
+  if (t.id === "snip-sort") { ui.snipSort = t.value; return draw(); }
   if (t.id === "recipe-folder") { r.folder = t.value || null; persist(); return toast(t.value ? "Moved to " + folderById(t.value).name : "Unfiled"); }
   if (t.id === "bulk-folder" && t.value) {
     if (!ui.picked.size) { t.value = ""; return toast("Pick some recipes first"); }
@@ -2105,6 +2127,17 @@ document.addEventListener("input", (e) => {
     else c[t.dataset.cf] = t.value;
     persist();
   }
+});
+
+// Double-clicking a ticket (cast, snippet, model profile) opens it for editing,
+// the same as its Edit link. Fields, buttons and tags keep their own double-click.
+document.addEventListener("dblclick", (e) => {
+  if (e.target.closest("input, textarea, select, button, a, label, .chip")) return;
+  const ticket = e.target.closest(".tk, .snip");
+  const edit = ticket && [...ticket.querySelectorAll('[data-act$="-toggle"]')].find((b) => b.closest(".tk, .snip") === ticket);
+  if (!edit || edit.textContent.trim() !== "Edit") return;
+  window.getSelection()?.removeAllRanges();
+  edit.click();
 });
 
 document.addEventListener("keydown", (e) => {

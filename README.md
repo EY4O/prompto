@@ -150,9 +150,13 @@ Click a result to open it larger, rate it, make it the recipe's cover, or copy i
 </details>
 
 <details>
-<summary><b>🗂️ Folders</b></summary>
+<summary><b>🗂️ Folders, filters and sorting</b></summary>
 
 **Recipes** has a row of folders: **All**, **Unfiled**, and your own, each with a count. **+ Folder** makes one, and the selected folder can be renamed or deleted (its recipes become unfiled). To file recipes, drag a card onto a folder, pick a folder in the recipe's header, or press **Select**, pick several cards, and use **Move to…**; the same bar stars or deletes them in one go. New recipes start in the folder you're looking at.
+
+**Cast** and **Snippets** have a row of chips too: cast by series, snippets by category. Their sort menu puts them in the order they were added, A–Z, or by how many recipes use them.
+
+Double-click a cast card, a snippet or a model profile to open it for editing, the same as its **Edit** link.
 </details>
 
 <details>

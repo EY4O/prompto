@@ -117,3 +117,15 @@ describe("snippets: categories and duplicates", () => {
     assert.equal(b.prose, "__lighting__");
   });
 });
+
+describe("snippets: sorting", () => {
+  test("A–Z and most used", async () => {
+    const { sortSnippets } = await import("../lib/snippets.js");
+    const db = library();
+    const az = sortSnippets(db.snippets, db, "az").map((s) => s.name);
+    assert.deepEqual(az, [...az].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })));
+    db.recipes[0].blocks.find((x) => Array.isArray(x.tags)).prose = "__moody_rim__";
+    assert.equal(sortSnippets(db.snippets, db, "used")[0].name, "Moody rim");
+    assert.deepEqual(sortSnippets(db.snippets, db, "added").map((s) => s.id), db.snippets.map((s) => s.id));
+  });
+});

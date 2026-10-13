@@ -334,6 +334,8 @@ button.chip:hover, .chip.edit:hover { border-color: var(--line-2); }
 .sec.cat-edit .folder-name { flex: 1; }
 .dup-group { border-top: 1px solid var(--line); padding: 10px 0 4px; margin-top: 10px; display: grid; gap: 6px; }
 .dup-row { gap: 10px; }
+.snip-bar { gap: 12px; align-items: flex-start; margin-top: 4px; }
+.snip-bar #snip-sort { flex: none; margin-top: 6px; }
 
 /* ---------- Settings ---------- */
 .pf-edit { margin-top: 12px; display: grid; gap: 4px; }
@@ -447,7 +449,7 @@ button.chip:hover, .chip.edit:hover { border-color: var(--line-2); }
 .stars button:hover { color: var(--fg); }
 .slip-match { margin-top: 6px; font-size: 12px; font-weight: 300; color: var(--fg-2); }
 .slip-match::before { content: "↺ "; color: var(--rose); }
-#sort { font: inherit; font-size: 11px; text-transform: uppercase; border: 0; border-bottom: 1px solid var(--line-2); background: none; color: var(--fg-2); padding: 0 2px; }
+#sort, #cast-sort, #snip-sort { font: inherit; font-size: 11px; text-transform: uppercase; border: 0; border-bottom: 1px solid var(--line-2); background: none; color: var(--fg-2); padding: 0 2px; }
 .lightbox { position: fixed; inset: 0; z-index: 25; display: grid; place-items: center; padding: 16px; background: color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter: blur(4px); }
 .lightbox[hidden] { display: none; }
 .lb-card { width: 100%; max-width: 420px; max-height: 100%; overflow: auto; border-radius: 12px; background: var(--bg); box-shadow: 0 0 0 1px var(--line-2), 0 20px 40px -16px rgba(var(--shadow-tint), 0.45); }

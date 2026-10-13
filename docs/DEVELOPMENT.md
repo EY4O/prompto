@@ -58,6 +58,7 @@ node --test
 | `tags`, `wildcards`, `diff`, `importers`, `sync` | tag lists, wildcard rolls, version diffs, other tools' files, sync merging |
 | `comfy`, `card`, `seed` | loading into a mock ComfyUI graph, share-card chunks, sample data |
 | `cast` | deleting a cast member and the recipe blocks that used them |
+| `snippets` | wildcard names, duplicate detection, unique names, renaming (and rewriting recipes), removal |
 
 GitHub Actions runs the same command on every push (`.github/workflows/test.yml`).
 

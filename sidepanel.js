@@ -4,6 +4,7 @@ import { readRecipeFromFile, parseComfy } from "./lib/pngmeta.js";
 import { fromMeta as toRecipe1 } from "./lib/recipe1.js";
 import { SEED } from "./lib/seed.js";
 import { removeCharacter } from "./lib/cast.js";
+import { wildcardToken, findDuplicate, uniqueName, recipesUsing, renameSnippet, removeSnippet } from "./lib/snippets.js";
 import { loadTagList, importTagCsv, clearTagList, tagListInfo, searchLocal, libraryTags, searchLibrary, searchDanbooru } from "./lib/tags.js";
 import { attachAutocomplete } from "./lib/autocomplete.js";
 import { tagDiff, wordDiff, settingsDiff, changed } from "./lib/diff.js";
@@ -36,7 +37,7 @@ const store = {
 let db;
 const ui = {
   sync: { handle: null, state: "off", at: 0, error: "", busy: false, timer: 0 },
-  rolls: {}, comparing: false, cmpPick: [], refPick: null, pendingForeign: null, folder: "all", picking: false, picked: new Set(), renamingFolder: null, tab: "inbox", recipeId: null, openChar: null, openProfile: null, q: "", filter: "all", sort: "new", lightbox: null, diffId: null,
+  rolls: {}, comparing: false, cmpPick: [], refPick: null, pendingForeign: null, folder: "all", picking: false, picked: new Set(), renamingFolder: null, tab: "inbox", recipeId: null, openChar: null, openSnip: null, openProfile: null, q: "", filter: "all", sort: "new", lightbox: null, diffId: null,
   importId: null, sheet: null,
   comfyLive: false, comfyTab: null, bridge: null, syncedRev: -1, focus: null, pendingImport: null, rev: 0
 };
@@ -135,6 +136,7 @@ function armed(el, prompt = "Press again to confirm") {
 const matches = (q, ...fields) => !q || fields.join(" ").toLowerCase().includes(q.toLowerCase());
 const recipeById = (id) => db.recipes.find((r) => r.id === id);
 const charById = (id) => db.characters.find((c) => c.id === id);
+const snipById = (id) => db.snippets.find((x) => x.id === id);
 
 // ---------- Theme ----------
 function applyTheme(t) {
@@ -159,9 +161,15 @@ function route() {
   if (tab === "recipe" && id && recipeById(id)) { ui.tab = "recipes"; ui.recipeId = id; }
   else if (tab === "import" && id && db.inbox.some((i) => i.id === id && i.kind === "booru")) { ui.tab = "inbox"; ui.importId = id; }
   else if (tab === "cast") { ui.tab = "characters"; ui.openChar = id || ui.openChar; }
+  else if (tab === "snippet") { ui.tab = "snippets"; ui.openSnip = id || ui.openSnip; }
   else if (TABS.includes(tab)) ui.tab = tab;
   draw();
   if (tab === "cast" && id) requestAnimationFrame(() => $("#c-" + id)?.scrollIntoView({ block: "start", behavior: "smooth" }));
+  else if (tab === "snippet" && id) requestAnimationFrame(() => {
+    // Show the category heading too when the snippet is the first in it.
+    const el = $("#s-" + id), above = el?.previousElementSibling;
+    (above && above.classList.contains("sec") ? above : el)?.scrollIntoView({ block: "start" });
+  });
   else window.scrollTo(0, 0);
 }
 const go = (hash) => { if (location.hash === "#" + hash) route(); else location.hash = hash; };
@@ -312,15 +320,18 @@ function fileItem(id, as) {
     const post = item.kind === "booru" ? postOf(item) : null;
     const text = post ? post.general.join(", ") : item.text;
     const tags = !!post || looksLikeTags(text);
-    db.snippets.unshift({
-      id: uid("sn"), cat: "Unsorted",
-      name: post ? (post.characters[0] ? titleCase(post.characters[0]) : "Booru tags") : text.split(/[,.]/)[0].slice(0, 32),
-      tags: tags ? parseTags(text).map((x) => x.t) : [],
-      prose: tags ? "" : text
-    });
+    const draft = { tags: tags ? parseTags(text).map((x) => x.t) : [], prose: tags ? "" : text };
     done();
-    toast("Filed as snippet");
-    go("snippets");
+    const dup = findDuplicate(db.snippets, draft);
+    if (dup) { toast(`Already in your snippets as ${dup.name}`); return go("snippet/" + dup.id); }
+    // A booru post is named after the post, not its character: the tags describe the picture.
+    const cat = post ? "Scenes" : "Unsorted";
+    const base = post ? `${siteName(post)} ${post.id ? "#" + post.id : "tags"}` : text.split(/[,.]/)[0].slice(0, 32).trim() || "Snippet";
+    const sn = { id: uid("sn"), cat, name: uniqueName(db.snippets, base, cat), ...draft };
+    db.snippets.unshift(sn);
+    persist();
+    toast("Filed as snippet: name it and pick a category");
+    go("snippet/" + sn.id);
   }
 }
 
@@ -458,7 +469,10 @@ function fileSheet() {
   }
   if (sheet.snippet) {
     const scene = sceneTags(post);
-    if (scene.length) db.snippets.unshift({ id: uid("sn"), cat: "Scenes", name: post.id ? `Danbooru #${post.id}` : "Booru scene", tags: scene, prose: "" });
+    if (scene.length && !findDuplicate(db.snippets, { tags: scene })) {
+      const name = uniqueName(db.snippets, `${siteName(post)} ${post.id ? "#" + post.id : "scene"}`, "Scenes");
+      db.snippets.unshift({ id: uid("sn"), cat: "Scenes", name, tags: scene, prose: "" });
+    }
   }
   db.inbox = db.inbox.filter((i) => i.id !== sheet.itemId);
   ui.sheet = null;
@@ -1294,6 +1308,7 @@ function strChips(arr, path) {
 function listTarget(path) {
   const [a, b, c] = path.split("|");
   if (a === "profile") return db.profiles[b].prefix;
+  if (a === "snip") return snipById(b).tags;
   const ch = charById(a);
   return b === "appearance" ? ch.appearance : ch.outfits[c].tags;
 }
@@ -1360,20 +1375,35 @@ function drawCast() {
 }
 
 // ---------- Snippets ----------
+function snippetCard(x) {
+  const open = ui.openSnip === x.id;
+  const node = (k) => ui.comfyTab ? `<button class="link" data-act="snip-node" data-id="${x.id}" data-k="${k}" title="Append to the selected ComfyUI node">→ Node</button>` : "";
+  const head = `<div class="spread"><span class="snip-name">${esc(x.name)}</span>
+    <div class="row">${x.tags.length ? `<button class="link" data-act="snip-copy" data-id="${x.id}" data-k="tags">Tags</button>` : ""}${x.prose ? `<button class="link" data-act="snip-copy" data-id="${x.id}" data-k="prose">Prose</button>` : ""}${node(x.tags.length ? "tags" : "prose")}<button class="link" data-act="snip-toggle" data-id="${x.id}">${open ? "Done" : "Edit"}</button></div></div>`;
+  if (!open) return `<div class="snip" id="s-${x.id}">${head}
+    ${x.tags.length ? `<div class="chips">${x.tags.map((t) => `<span class="chip ro">${esc(t)}</span>`).join("")}</div>` : ""}
+    ${x.prose ? `<p class="snip-prose">${esc(x.prose)}</p>` : ""}</div>`;
+  const uses = recipesUsing(db, x.name).length;
+  return `<div class="snip editing" id="s-${x.id}">${head}
+    <div class="settings-grid">
+      <label>Name<input data-sf="name" data-id="${x.id}" value="${esc(x.name)}"></label>
+      <label>Category<input data-sf="cat" data-id="${x.id}" value="${esc(x.cat)}" list="snip-cats"></label>
+    </div>
+    <p class="kv">Use it as a wildcard: <span class="mono" data-token="${x.id}">${esc(wildcardToken(x.name))}</span>${uses ? ` · in ${plural(uses, "recipe")}` : ""}</p>
+    <div class="group-label">Tags</div><div class="chips">${strChips(x.tags, "snip|" + x.id)}</div>
+    <div class="group-label spread">Prose<button class="link" data-act="snip-draft" data-id="${x.id}">Write from tags</button></div>
+    <textarea class="prose" data-sf="prose" data-id="${x.id}" rows="1" placeholder="a short natural-language version">${esc(x.prose)}</textarea>
+    <div class="row" style="justify-content:flex-end"><button class="link" data-act="snip-del" data-id="${x.id}">Delete</button></div>
+  </div>`;
+}
 function drawSnippets() {
-  const list = db.snippets.filter((x) => matches(ui.q, x.name, x.cat, x.tags.join(" "), x.prose));
+  const list = db.snippets.filter((x) => x.id === ui.openSnip || matches(ui.q, x.name, x.cat, x.tags.join(" "), x.prose));
   const cats = [...new Set(list.map((x) => x.cat))];
-  const node = (x, k) => ui.comfyTab ? `<button class="link" data-act="snip-node" data-id="${x.id}" data-k="${k}" title="Append to the selected ComfyUI node">→ Node</button>` : "";
-  view.innerHTML = cats.length ? cats.map((cat) => {
+  view.innerHTML = (cats.length ? cats.map((cat) => {
     const items = list.filter((x) => x.cat === cat);
-    return `<div class="sec">${esc(cat)}<span class="aside">${items.length}</span></div>` + items.map((x) => `
-      <div class="snip">
-        <div class="spread"><span class="snip-name">${esc(x.name)}</span>
-          <div class="row">${x.tags.length ? `<button class="link" data-act="snip-copy" data-id="${x.id}" data-k="tags">Tags</button>` : ""}${x.prose ? `<button class="link" data-act="snip-copy" data-id="${x.id}" data-k="prose">Prose</button>` : ""}${node(x, x.tags.length ? "tags" : "prose")}</div></div>
-        ${x.tags.length ? `<div class="chips">${x.tags.map((t) => `<span class="chip ro">${esc(t)}</span>`).join("")}</div>` : ""}
-        ${x.prose ? `<p class="snip-prose">${esc(x.prose)}</p>` : ""}
-      </div>`).join("");
-  }).join("") : `<div class="empty"><h3>No <span class="holo-text">snippets</span></h3><p>File tags from the inbox to start a collection.</p></div>`;
+    return `<div class="sec">${esc(cat)}<span class="aside">${items.length}</span></div>` + items.map(snippetCard).join("");
+  }).join("") : `<div class="empty"><h3>No <span class="holo-text">snippets</span></h3><p>File tags from the inbox to start a collection.</p></div>`)
+    + `<datalist id="snip-cats">${[...new Set(db.snippets.map((x) => x.cat))].map((c) => `<option value="${esc(c)}">`).join("")}</datalist>`;
 }
 
 const SNIP_BLOCK = { Lighting: "lighting", Camera: "camera", Style: "style" };
@@ -1795,6 +1825,23 @@ document.addEventListener("click", async (e) => {
       break;
     }
     case "cast-toggle": ui.openChar = ui.openChar === el.dataset.c ? null : el.dataset.c; draw(); break;
+    case "snip-toggle": ui.openSnip = ui.openSnip === el.dataset.id ? null : el.dataset.id; draw(); break;
+    case "snip-draft": {
+      const x = snipById(el.dataset.id);
+      const text = proseFromTags(SNIP_BLOCK[x.cat] || "scene", x.tags, db.settings.proseTemplates);
+      if (!text) return toast("Add some tags first");
+      x.prose = text; persist(); draw(); $(`[data-sf="prose"][data-id="${x.id}"]`)?.focus(); break;
+    }
+    case "snip-del": {
+      if (!armed(el, "Press again to delete")) return;
+      const x = snipById(el.dataset.id);
+      const still = recipesUsing(db, x.name).length;
+      removeSnippet(db, x.id);
+      if (ui.openSnip === x.id) ui.openSnip = null;
+      persist();
+      toast(`Deleted ${x.name}` + (still ? ` · ${plural(still, "recipe")} still mention ${wildcardToken(x.name)}` : ""));
+      go("snippets"); break;
+    }
     case "cast-del": {
       if (!armed(el, "Press again to delete")) return;
       const res = removeCharacter(db, el.dataset.c);
@@ -1902,6 +1949,15 @@ document.addEventListener("change", async (e) => {
   const t = e.target;
   const r = ui.recipeId && recipeById(ui.recipeId);
   if (t.id === "cap-file") return handleFiles([...t.files]);
+  if (t.dataset.sf === "name" || t.dataset.sf === "cat") {
+    const x = snipById(t.dataset.id), v = t.value.trim();
+    if (!v) { t.value = t.dataset.sf === "name" ? x.name : x.cat; return; }
+    if (t.dataset.sf === "cat") { x.cat = v; persist(); return draw(); }
+    const moved = renameSnippet(db, x.id, uniqueName(db.snippets, v, x.cat, x.id));
+    persist(); draw();
+    if (moved.length) toast(`Renamed · updated ${plural(moved.length, "recipe")} that used it`);
+    return;
+  }
   if (t.id === "sort") { ui.sort = t.value; return draw(); }
   if (t.id === "recipe-folder") { r.folder = t.value || null; persist(); return toast(t.value ? "Moved to " + folderById(t.value).name : "Unfiled"); }
   if (t.id === "bulk-folder" && t.value) {
@@ -1978,6 +2034,12 @@ document.addEventListener("input", (e) => {
     persist();
     const sample = $(".tpl-sample");
     if (sample) sample.textContent = proseFromTags("character", ["1girl", "silver hair", "long hair", "twin braids", "red eyes", "freckles"], db.settings.proseTemplates, { name: "Rin" });
+    return;
+  }
+  if (t.dataset.sf) {
+    const x = snipById(t.dataset.id);
+    if (t.dataset.sf === "prose") { x.prose = t.value; persist(); }
+    else if (t.dataset.sf === "name") { const tok = $(`[data-token="${x.id}"]`); if (tok) tok.textContent = wildcardToken(t.value); }
     return;
   }
   if (t.dataset.cf) {

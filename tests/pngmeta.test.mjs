@@ -1,6 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { readPngText, parseComfy, parseA1111, readRecipeFromFile } from "../lib/pngmeta.js";
+import { readPngText, parseComfy, parseA1111, readRecipeFromFile, recipeFromText } from "../lib/pngmeta.js";
 import { makePng, toArrayBuffer, tEXt, zTXt, iTXt } from "./helpers.mjs";
 
 describe("readPngText", () => {
@@ -207,5 +207,50 @@ describe("parseComfy LoRA loaders", () => {
     assert.deepEqual(parseComfy(g).settings.loras, [
       { name: "Krea 2\iiyo.safetensors", w: 0.75 }, { name: "lm_one", w: 0.6 }, { name: "stack_a.safetensors", w: 0.4 }, { name: "eff.safetensors", w: 0.9 }
     ]);
+  });
+});
+
+describe("pngmeta: tangled ComfyUI graphs", () => {
+  // The shape of a real Civitai upload: the prompt goes through Impact's wildcard
+  // processor, a text join with LoRA Manager trigger words, a regex and switches.
+  const graph = {
+    "57": { class_type: "ImpactWildcardProcessor", inputs: { wildcard_text: "1girl, {red|blue} eyes", populated_text: "1girl, red eyes", mode: "reproduce" } },
+    "59": { class_type: "ImpactWildcardProcessor", inputs: { wildcard_text: "worst quality", populated_text: "worst quality" } },
+    "58": { class_type: "Lora Loader (LoraManager)", inputs: { text: "", loras: { __value__: [] } } },
+    "92": { class_type: "TriggerWord Toggle (LoraManager)", inputs: { trigger_words: ["58", 2] } },
+    "83": { class_type: "StringConcatenate", inputs: { string_a: ["92", 0], string_b: ["57", 0], delimiter: "," } },
+    "93": { class_type: "ImpactSwitch", inputs: { select: 1, input1: ["83", 0], input2: ["57", 0] } },
+    "96": { class_type: "RegexReplace", inputs: { string: ["93", 0], regex_pattern: "^,|,$" } },
+    "102": { class_type: "CLIPTextEncode", inputs: { text: ["96", 0], clip: ["4", 1] } },
+    "80": { class_type: "ImpactSwitch", inputs: { select: 1, input1: ["102", 0] } },
+    "106": { class_type: "CLIPTextEncode", inputs: { text: ["59", 0], clip: ["4", 1] } },
+    "4": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: "fabricatedXL_v70.safetensors" } },
+    "111": { class_type: "KSampler", inputs: { seed: 7, steps: 28, cfg: 6, sampler_name: "euler_ancestral", scheduler: "normal", positive: ["80", 0], negative: ["106", 0], model: ["4", 0] } }
+  };
+
+  test("follows switches, text joins, regexes and wildcard processors", () => {
+    const c = parseComfy(graph);
+    assert.equal(c.positive, "1girl, red eyes");
+    assert.equal(c.negative, "worst quality");
+    assert.deepEqual(c.comfy.pos, { id: "57", key: "populated_text" });
+  });
+
+  test("a join with text on both sides keeps both", () => {
+    const g = structuredClone(graph);
+    g["83"].inputs.string_a = "megumin";
+    assert.equal(parseComfy(g).positive, "megumin,1girl, red eyes");
+  });
+
+  test("falls back to the A1111 parameters when the graph can't be traced", () => {
+    const g = { "1": { class_type: "Mystery", inputs: { x: ["2", 0] } }, "3": { class_type: "KSampler", inputs: { positive: ["1", 0], negative: ["1", 1], seed: 1 } } };
+    const meta = recipeFromText({ prompt: JSON.stringify(g), parameters: "1girl, smile\nNegative prompt: lowres\nSteps: 20, Sampler: Euler a, Seed: 1" });
+    assert.equal(meta.format, "ComfyUI");
+    assert.equal(meta.positive, "1girl, smile");
+    assert.equal(meta.negative, "lowres");
+  });
+
+  test("NaN in the graph JSON doesn't stop the import", () => {
+    const text = JSON.stringify(graph).replace('"seed":7', '"seed":7,"is_changed":NaN');
+    assert.equal(recipeFromText({ prompt: text }).positive, "1girl, red eyes");
   });
 });

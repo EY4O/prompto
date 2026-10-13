@@ -1,4 +1,4 @@
-import { DEFAULT_PROFILES, STOCKS, huesOf, BLOCK_TYPES, render, draftProse, loraBase, estimateClipTokens, lint, toA1111, looksLikeTags, parseTags } from "./lib/render.js";
+import { DEFAULT_PROFILES, STOCKS, huesOf, BLOCK_TYPES, render, draftProse, loraBase, estimateClipTokens, lint, toA1111, looksLikeTags, parseTags, profileFor } from "./lib/render.js";
 import { DEFAULT_TEMPLATES, SLOT_HELP, proseFromTags } from "./lib/prose.js";
 import { readRecipeFromFile, parseComfy } from "./lib/pngmeta.js";
 import { fromMeta as toRecipe1 } from "./lib/recipe1.js";
@@ -283,9 +283,8 @@ function drawInbox() {
 }
 
 // Picks a profile for imported text or PNGs, falling back if the preset was deleted.
-function guessProfile(model, text) {
-  const want = /krea|flux/i.test(model) ? "krea" : /qwen/i.test(model) ? "qwen" : /anima/i.test(model) ? "anima"
-    : looksLikeTags(text) ? "illustrious" : "krea";
+function guessProfile(model, text, base = "") {
+  const want = profileFor(model, text, base);
   if (db.profiles[want]) return want;
   const fmt = looksLikeTags(text) ? "tags" : "prose";
   return (Object.values(db.profiles).find((p) => p.format === fmt) || Object.values(db.profiles)[0]).id;
@@ -314,7 +313,7 @@ function fileItem(id, as) {
       r.blocks = [{ type: "subject", tags: tags ? parseTags(item.text) : [], prose: tags ? "" : item.text.replace(/^idea:\s*/i, "") }];
     } else if (item.kind === "png") {
       const m = item.meta;
-      r.profile = guessProfile(m.settings.model || "", m.positive);
+      r.profile = guessProfile(m.settings.model || "", m.positive, m.settings.baseModel);
       r.title = (item.title || "Imported").replace(/\.\w+$/, "").slice(0, 40);
       const tags = looksLikeTags(m.positive);
       r.blocks = [{ type: "subject", tags: tags ? parseTags(m.positive) : [], prose: tags ? "" : m.positive }];
@@ -1631,7 +1630,7 @@ function applyForeign() {
     const set = Object.fromEntries(Object.entries(x.settings || {}).filter(([, v]) => v !== undefined && v !== "" && v !== null));
     Object.assign(r, { title: x.title, blocks: x.blocks, negative: x.negative, fav: x.fav, image: x.image || null, importKey: promptKey(x.positive) });
     r.settings = { ...r.settings, ...set, loras: set.loras || [] };
-    r.profile = guessProfile(r.settings.model || "", x.positive);
+    r.profile = guessProfile(r.settings.model || "", x.positive, r.settings.baseModel);
     db.recipes.unshift(r);
   }
   const msg = [f.recipes.length && `${f.recipes.length} recipe${f.recipes.length > 1 ? "s" : ""}`, f.snippets.length && `${f.snippets.length} snippet${f.snippets.length > 1 ? "s" : ""}`].filter(Boolean).join(" and ");

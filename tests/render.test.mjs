@@ -244,3 +244,17 @@ describe("render helpers", () => {
     assert.equal(looksLikeTags("a, b"), false);
   });
 });
+
+describe("profileFor", () => {
+  test("the base model and checkpoint name come before how the prompt reads", async () => {
+    const { profileFor } = await import("../lib/render.js");
+    assert.equal(profileFor("fabricatedXL_v70", ""), "illustrious");
+    assert.equal(profileFor("anything", "a woman walking on a beach at dusk", "Illustrious"), "illustrious");
+    assert.equal(profileFor("flux1-krea-dev", "1girl, smile"), "krea");
+    assert.equal(profileFor("animagine-xl-4.0", "a girl"), "illustrious");
+    assert.equal(profileFor("rdbtAnima_v025", "1girl"), "anima");
+    assert.equal(profileFor("Qwen-Rapid-AIO", "1girl"), "qwen");
+    assert.equal(profileFor("", "1girl, solo, smile, red eyes"), "illustrious");
+    assert.equal(profileFor("", "A quiet street at night, lit by neon signs and rain"), "krea");
+  });
+});

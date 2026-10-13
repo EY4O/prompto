@@ -84,6 +84,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === "prompto-selection") {
     await pushCapture({ kind: "text", text: info.selectionText.trim(), url: tab && tab.url, source });
   } else if (info.menuItemId === "prompto-image") {
+    // On a Civitai image, its API knows more than the file: the base model, hashes
+    // and version ids, and prompts from workflows too tangled to trace.
+    const civ = [info.linkUrl, tab && tab.url].find((u) => u && imageIdFromUrl(u));
+    if (civ) {
+      try { await captureCivitai(civ); return; } catch {}
+    }
     // The original file may still carry its generation data (PNG chunks or EXIF).
     const meta = await recipeFromImageUrl(info.srcUrl);
     if (meta) await pushCapture({ kind: "png", format: meta.format, meta, thumb: info.srcUrl, title: fileName(info.srcUrl), url: tab && tab.url, source });

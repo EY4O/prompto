@@ -9,15 +9,25 @@ const widget = (name, value, extra = {}) => ({
 });
 const combo = (name, value, values) => widget(name, value, { type: "combo", options: { values } });
 
-function node(id, type, { widgets = [], inputs = [], title } = {}) {
+// Inputs are names, or { name, widget: { name } } for a widget converted to a socket.
+// link() wires one up, the way LiteGraph marks it: a link id on the input.
+function node(id, type, { widgets = [], inputs = [], outputs = [], title } = {}) {
   const n = {
     id, type, title, widgets, mode: 0, links: {},
-    inputs: inputs.map((name) => ({ name })),
-    getInputNode(slot) { return this.links[this.inputs[slot].name] || null; }
+    inputs: inputs.map((x) => (typeof x === "string" ? { name: x, link: null } : { link: null, ...x })),
+    outputs: outputs.map((name) => ({ name })),
+    getInputNode(slot) { const l = this.links[this.inputs[slot].name]; return l ? l.node : null; },
+    getInputLink(slot) { const l = this.links[this.inputs[slot].name]; return l ? { origin_slot: l.slot } : null; }
   };
   return n;
 }
-const link = (to, input, from) => { to.links[input] = from; };
+let linkId = 0;
+const link = (to, input, from, slot = 0) => {
+  to.links[input] = { node: from, slot };
+  let i = to.inputs.find((x) => x.name === input);
+  if (!i) { i = { name: input, link: null }; to.inputs.push(i); }
+  i.link = ++linkId;
+};
 
 let saved;
 let dirtied;
@@ -253,5 +263,79 @@ describe("findTabs", () => {
 
   test("no tabs API means no tabs", async () => {
     assert.deepEqual(await findTabs(DEFAULT_COMFY), []);
+  });
+});
+
+
+describe("comfyApply: tangled workflows", () => {
+  // Shaped like a real Civitai upload: the prompt sits in Impact's wildcard
+  // processors, reached through switches, a text join with LoRA Manager trigger
+  // words and a regex replace; the encoders' text boxes are wired, not typed in;
+  // seed, steps, CFG and sampler come from an Input Parameters node; the latent's
+  // size from two int nodes.
+  function tangled() {
+    const wildPos = node(57, "ImpactWildcardProcessor", { widgets: [widget("wildcard_text", "1girl, {red|blue} eyes", { options: { multiline: true } }), widget("populated_text", "1girl, red eyes", { options: { multiline: true } }), widget("mode", "reproduce")] });
+    const wildNeg = node(59, "ImpactWildcardProcessor", { widgets: [widget("wildcard_text", "worst quality", { options: { multiline: true } }), widget("populated_text", "worst quality", { options: { multiline: true } })] });
+    const trig = node(92, "TriggerWord Toggle (LoraManager)", { widgets: [widget("group_mode", true)], inputs: ["trigger_words"] });
+    const join = node(83, "StringConcatenate", { widgets: [widget("string_a", "", { options: { multiline: true } }), widget("string_b", "", { options: { multiline: true } }), widget("delimiter", ",")],
+      inputs: [{ name: "string_a", widget: { name: "string_a" } }, { name: "string_b", widget: { name: "string_b" } }] });
+    link(join, "string_a", trig); link(join, "string_b", wildPos);
+    const sw = node(93, "ImpactSwitch", { widgets: [widget("select", 1), widget("sel_mode", false)], inputs: ["input1", "input2"] });
+    link(sw, "input1", join); link(sw, "input2", wildPos);
+    const regex = node(96, "RegexReplace", { widgets: [widget("string", "", { options: { multiline: true } }), widget("regex_pattern", "^,|,$", { options: { multiline: true } })], inputs: [{ name: "string", widget: { name: "string" } }] });
+    link(regex, "string", sw);
+    const enc = node(102, "CLIPTextEncode", { widgets: [widget("text", "", { type: "customtext" })], inputs: ["clip", { name: "text", widget: { name: "text" } }] });
+    link(enc, "text", regex);
+    const encNeg = node(106, "CLIPTextEncode", { widgets: [widget("text", "", { type: "customtext" })], inputs: ["clip", { name: "text", widget: { name: "text" } }] });
+    link(encNeg, "text", wildNeg);
+    const sw2 = node(80, "ImpactSwitch", { widgets: [widget("select", 1)], inputs: ["input1"] });
+    link(sw2, "input1", enc);
+    const params = node(60, "Input Parameters (Image Saver)", {
+      widgets: [widget("seed", 1), widget("steps", 20), widget("cfg", 7), combo("sampler", "euler", ["euler", "euler_ancestral"]), combo("scheduler", "normal", ["normal", "karras"])],
+      outputs: ["seed", "steps", "cfg", "sampler", "scheduler"] });
+    const show = node(79, "easy showAnything", { widgets: [widget("text", "euler")], inputs: ["anything"] });
+    link(show, "anything", params, 3);
+    const ks = node(111, "KSampler", {
+      widgets: [widget("seed", 1), widget("steps", 20), widget("cfg", 7), combo("sampler_name", "euler", ["euler", "euler_ancestral"]), combo("scheduler", "normal", ["normal", "karras"])],
+      inputs: ["model", "positive", "negative", "latent_image", ...["seed", "steps", "cfg", "sampler_name", "scheduler"].map((k) => ({ name: k, widget: { name: k } }))] });
+    link(ks, "positive", sw2); link(ks, "negative", encNeg);
+    link(ks, "seed", params, 0); link(ks, "steps", params, 1); link(ks, "cfg", params, 2); link(ks, "sampler_name", show, 0); link(ks, "scheduler", params, 4);
+    const detailer = node(33, "FaceDetailerPipe", { widgets: [widget("steps", 14)] });
+    const w = node(70, "easy int", { widgets: [widget("value", 1024)], outputs: ["int"] }), h = node(73, "easy int", { widgets: [widget("value", 1536)], outputs: ["int"] });
+    const latent = node(97, "EmptyLatentImage", { widgets: [widget("width", 1024), widget("height", 1536)], inputs: [{ name: "width", widget: { name: "width" } }, { name: "height", widget: { name: "height" } }] });
+    link(latent, "width", w); link(latent, "height", h);
+    // A bypassed upscaler (with its own steps) and resize node come first, as in the real file.
+    const upscale = node(127, "UltimateSDUpscale", { widgets: [widget("steps", 20), widget("seed", 5)], inputs: ["positive"] });
+    upscale.mode = 4; link(upscale, "positive", sw2);
+    const resize = node(130, "ImageResizeKJv2", { widgets: [widget("width", 512), widget("height", 512)] });
+    resize.mode = 4;
+    const nodes = [upscale, resize, wildPos, wildNeg, trig, join, sw, regex, enc, encNeg, sw2, params, show, detailer, ks, w, h, latent];
+    return { nodes, wildPos, wildNeg, join, enc, encNeg, params, ks, detailer, w, h, upscale, resize };
+  }
+
+  test("the prompt goes into the wildcard processors, not the wired boxes", () => {
+    const g = tangled();
+    install(g.nodes);
+    const res = comfyApply({ mode: "recipe", positive: "1girl, smile", negative: "lowres", settings: {} });
+    assert.ok(res.ok);
+    assert.equal(g.wildPos.widgets[0].value, "1girl, smile");
+    assert.equal(g.wildPos.widgets[1].value, "1girl, smile");
+    assert.equal(g.wildNeg.widgets[1].value, "lowres");
+    assert.equal(g.enc.widgets[0].value, "");
+    assert.equal(g.encNeg.widgets[0].value, "");
+    assert.equal(g.join.widgets[0].value, "");
+  });
+
+  test("settings go where the sampler's wired inputs come from", () => {
+    const g = tangled();
+    install(g.nodes);
+    comfyApply({ mode: "recipe", positive: "x", negative: "y", settings: { seed: 99, steps: 30, cfg: 5.5, sampler: "euler_ancestral", scheduler: "karras", width: 832, height: 1216 } });
+    const p = Object.fromEntries(g.params.widgets.map((w) => [w.name, w.value]));
+    assert.deepEqual(p, { seed: 99, steps: 30, cfg: 5.5, sampler: "euler_ancestral", scheduler: "karras" });
+    assert.equal(g.detailer.widgets[0].value, 14, "the detailer keeps its own steps");
+    assert.equal(g.ks.widgets.find((x) => x.name === "steps").value, 20, "the wired sampler box is left alone");
+    assert.deepEqual([g.w.widgets[0].value, g.h.widgets[0].value], [832, 1216]);
+    assert.equal(g.upscale.widgets[0].value, 20, "bypassed nodes are left alone");
+    assert.equal(g.resize.widgets[0].value, 512);
   });
 });

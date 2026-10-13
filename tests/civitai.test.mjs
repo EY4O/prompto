@@ -137,3 +137,34 @@ describe("civitaiToRecipe keeps the exact model references", () => {
     assert.equal(r.settings.baseModel, "Illustrious");
   });
 });
+
+describe("civitai: the original file fills in the workflow", () => {
+  const api = { format: "Civitai", positive: "1girl, smile", negative: "lowres", comfy: null,
+    settings: { model: "fabricatedXL_v70", baseModel: "Illustrious", modelRef: { versionId: 2565333 }, loras: [{ name: "detail_tweaker", w: 0.6, hash: "abc" }] } };
+  const file = { format: "ComfyUI", positive: "1girl, smile", negative: "lowres",
+    comfy: { graph: { "1": { class_type: "KSampler", inputs: {} } }, pos: { id: "57", key: "populated_text" }, neg: null, seed: null },
+    settings: { model: "sdxl/fabricatedXL_v70.safetensors", loras: [{ name: "styles/detail_tweaker.safetensors", w: 0.6 }, { name: "extra.safetensors", w: 1 }] } };
+
+  test("keeps the API's data and adds the graph and real file names", async () => {
+    const { withFileRecipe } = await import("../lib/civitai.js");
+    const m = withFileRecipe(api, file);
+    assert.equal(m.comfy, file.comfy);
+    assert.equal(m.settings.baseModel, "Illustrious");
+    assert.deepEqual(m.settings.modelRef, { versionId: 2565333 });
+    assert.equal(m.settings.model, "sdxl/fabricatedXL_v70.safetensors");
+    assert.deepEqual(m.settings.loras.map((l) => [l.name, l.hash]), [["styles/detail_tweaker.safetensors", "abc"], ["extra.safetensors", undefined]]);
+    assert.equal(api.settings.loras[0].name, "detail_tweaker", "the API recipe isn't changed in place");
+  });
+
+  test("a file without a ComfyUI graph changes nothing", async () => {
+    const { withFileRecipe } = await import("../lib/civitai.js");
+    assert.equal(withFileRecipe(api, null), api);
+    assert.equal(withFileRecipe(api, { format: "A1111", positive: "x", settings: {} }), api);
+  });
+
+  test("the file's prompts fill in only when the API has none", async () => {
+    const { withFileRecipe } = await import("../lib/civitai.js");
+    assert.equal(withFileRecipe({ ...api, positive: "" }, file).positive, "1girl, smile");
+    assert.equal(withFileRecipe(api, { ...file, positive: "other" }).positive, "1girl, smile");
+  });
+});

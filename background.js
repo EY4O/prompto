@@ -1,7 +1,7 @@
 // Capture plumbing. Everything captured here lands in `captures`; the side
 // panel drains that queue into its inbox, so the two never overwrite each other.
 import { postIdFromUrl, fetchPost, e621IdFromUrl, fetchE621 } from "./lib/booru.js";
-import { imageIdFromUrl, postIdFromUrl as civitaiPostId, hostOf, fetchCivitaiImage, fetchCivitaiPost, hasMeta, civitaiToRecipe, smallImage } from "./lib/civitai.js";
+import { imageIdFromUrl, postIdFromUrl as civitaiPostId, hostOf, fetchCivitaiImage, fetchCivitaiPost, hasMeta, civitaiToRecipe, withFileRecipe, smallImage } from "./lib/civitai.js";
 import { readImageText, recipeFromText } from "./lib/pngmeta.js";
 
 const CIVITAI_PATTERNS = ["https://civitai.com/*", "https://civitai.green/*", "https://civitai.red/*"];
@@ -124,7 +124,10 @@ async function captureCivitai(url) {
   const host = hostOf(url);
   const one = async (item) => {
     const page = `https://${host}/images/${item.id}`;
-    await pushCapture({ kind: "png", format: "Civitai", meta: civitaiToRecipe(item, page), thumb: smallImage(item.url), title: `Civitai #${item.id}`, url: page, source: host });
+    let meta = civitaiToRecipe(item, page);
+    // The API rarely has the ComfyUI workflow; the original file often does.
+    if (!meta.comfy) meta = withFileRecipe(meta, await recipeFromImageUrl(item.url));
+    await pushCapture({ kind: "png", format: "Civitai", meta, thumb: smallImage(item.url), title: `Civitai #${item.id}`, url: page, source: host });
   };
   const imageId = imageIdFromUrl(url);
   if (imageId) {

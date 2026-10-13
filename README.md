@@ -220,7 +220,9 @@ Use these anywhere in tags or prose:
 
 The output card shows one roll of the prompt. **Roll again** and **← Back** step through rolls, which are repeatable: roll 3 is always the same roll 3 for that recipe. Copying, **Load into workflow** and **Copy for Forge** use the roll you see; **Copy with wildcards** keeps the syntax for tools like Dynamic Prompts. Names that don't match a snippet are flagged by the checker. Inside `{…}`, separate options with `|`, not commas.
 
-**Edit** on a snippet changes its name, category, tags and prose, and shows the wildcard it answers to. Renaming a snippet updates the recipes that use its wildcard. Filing something from the inbox as a snippet opens it in this editor, and filing tags you already have opens the existing snippet instead of adding a copy.
+**Edit** on a snippet changes its name, category, tags and prose, and shows the wildcard it answers to. Renaming a snippet, or a whole category with **Rename** on its heading, updates the recipes that use its wildcard. Filing something from the inbox as a snippet opens it in this editor, with a first guess at the category for lighting, camera, style and negative tags; filing tags you already have opens the existing snippet instead of adding a copy. **Settings → Duplicate snippets** lists snippets with the same tags: keep one and the others merge into it.
+
+Deleting a recipe, cast member or snippet shows **Undo** for a few seconds.
 
 **Queue variants** loads and queues 2–6 rolls in the open ComfyUI tab, one after another, all on the recipe's seed, so you can compare them side by side. Each roll is remembered, so the images come back to the recipe's **Results**.
 </details>

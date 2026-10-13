@@ -1,6 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { wildcardToken, findDuplicate, uniqueName, recipesUsing, renameSnippet, removeSnippet } from "../lib/snippets.js";
+import { wildcardToken, findDuplicate, duplicateGroups, uniqueName, guessCategory, recipesUsing, renameSnippet, renameCategory, mergeSnippets, removeSnippet } from "../lib/snippets.js";
 import { SEED } from "../lib/seed.js";
 
 const library = () => JSON.parse(JSON.stringify(SEED));
@@ -62,5 +62,58 @@ describe("snippets", () => {
     assert.equal(removeSnippet(db, id).id, id);
     assert.equal(db.snippets.length, n - 1);
     assert.equal(removeSnippet(db, "sn_nobody"), null);
+  });
+});
+
+describe("snippets: categories and duplicates", () => {
+  test("pasted tags get a first guess at their category", () => {
+    assert.equal(guessCategory(["chromatic aberration", "film grain", "faded colors", "1990s (style)"]), "Style");
+    assert.equal(guessCategory(["rim light", "backlighting", "dark background"]), "Lighting");
+    assert.equal(guessCategory(["from below", "cowboy shot", "depth of field"]), "Camera");
+    assert.equal(guessCategory(["worst quality", "low quality", "bad anatomy", "watermark"]), "Negative");
+    assert.equal(guessCategory(["1girl", "red hair", "school uniform"]), null);
+    assert.equal(guessCategory([]), null);
+  });
+
+  test("duplicates are grouped by tags or by prose", () => {
+    const groups = duplicateGroups([
+      { id: "a", tags: ["x", "y"], prose: "" }, { id: "b", tags: ["Y", "x"], prose: "" },
+      { id: "c", tags: [], prose: "A calm sea" }, { id: "d", tags: [], prose: "a calm sea" },
+      { id: "e", tags: ["z"], prose: "" }, { id: "f", tags: [], prose: "" }
+    ]);
+    assert.deepEqual(groups.map((g) => g.map((s) => s.id)), [["a", "b"], ["c", "d"]]);
+  });
+
+  test("merging keeps one, points wildcards at it and keeps prose", () => {
+    const db = library();
+    db.snippets.push({ id: "dup1", cat: "Unsorted", name: "Uraraka Ochaco", tags: ["a", "b"], prose: "" },
+                     { id: "dup2", cat: "Unsorted", name: "Uraraka copy", tags: ["b", "a"], prose: "round cheeks" });
+    const b = db.recipes[0].blocks.find((x) => Array.isArray(x.tags));
+    b.prose = "__uraraka_copy__";
+    const res = mergeSnippets(db, "dup1", ["dup2"]);
+    assert.equal(res.removed, 1);
+    assert.ok(!db.snippets.some((s) => s.id === "dup2"));
+    assert.equal(db.snippets.find((s) => s.id === "dup1").prose, "round cheeks");
+    assert.equal(b.prose, "__uraraka_ochaco__");
+  });
+
+  test("renaming a category moves its snippets and its wildcard", () => {
+    const db = library();
+    const n = db.snippets.filter((s) => s.cat === "Lighting").length;
+    const b = db.recipes[0].blocks.find((x) => Array.isArray(x.tags));
+    b.prose = "__lighting__";
+    const res = renameCategory(db, "Lighting", "Light setups");
+    assert.equal(res.moved, n);
+    assert.equal(db.snippets.filter((s) => s.cat === "Light setups").length, n);
+    assert.equal(b.prose, "__light_setups__");
+  });
+
+  test("a category wildcard that a snippet's name shadows is left alone", () => {
+    const db = library();
+    db.snippets.push({ id: "s1", cat: "Misc", name: "Lighting", tags: ["soft light"], prose: "" });
+    const b = db.recipes[0].blocks.find((x) => Array.isArray(x.tags));
+    b.prose = "__lighting__";
+    renameCategory(db, "Lighting", "Light setups");
+    assert.equal(b.prose, "__lighting__");
   });
 });

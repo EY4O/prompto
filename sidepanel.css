@@ -326,6 +326,14 @@ button.chip:hover, .chip.edit:hover { border-color: var(--line-2); }
 .drop-card small { display: block; margin-top: 8px; font-size: 11px; color: var(--fg-2); }
 .toast { position: fixed; left: 50%; bottom: 18px; z-index: 30; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; background: var(--pill-bg); color: var(--pill-fg); font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; padding: 10px 16px; border-radius: 50px; max-width: calc(100% - 32px); transition: opacity 0.3s, transform 0.4s var(--ease); }
 .toast.on { opacity: 1; transform: translate(-50%, 0); }
+.toast.has-action.on { pointer-events: auto; }
+.toast-undo { margin-left: 12px; font: inherit; letter-spacing: inherit; color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.snip.editing { margin: 6px -12px; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--bg-edge); box-shadow: inset 3px 0 0 #f4a7c0; }
+.snip.editing + .snip { border-top: 0; }
+.sec.cat-edit { gap: 10px; }
+.sec.cat-edit .folder-name { flex: 1; }
+.dup-group { border-top: 1px solid var(--line); padding: 10px 0 4px; margin-top: 10px; display: grid; gap: 6px; }
+.dup-row { gap: 10px; }
 
 /* ---------- Settings ---------- */
 .pf-edit { margin-top: 12px; display: grid; gap: 4px; }

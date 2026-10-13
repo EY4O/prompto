@@ -4,7 +4,8 @@ import { readRecipeFromFile, parseComfy } from "./lib/pngmeta.js";
 import { fromMeta as toRecipe1 } from "./lib/recipe1.js";
 import { SEED } from "./lib/seed.js";
 import { removeCharacter } from "./lib/cast.js";
-import { wildcardToken, findDuplicate, uniqueName, recipesUsing, renameSnippet, removeSnippet } from "./lib/snippets.js";
+import { wildcardToken, findDuplicate, duplicateGroups, uniqueName, guessCategory, recipesUsing, renameSnippet, renameCategory, mergeSnippets, removeSnippet } from "./lib/snippets.js";
+import { snapshotLists, restoreLists } from "./lib/undo.js";
 import { loadTagList, importTagCsv, clearTagList, tagListInfo, searchLocal, libraryTags, searchLibrary, searchDanbooru } from "./lib/tags.js";
 import { attachAutocomplete } from "./lib/autocomplete.js";
 import { tagDiff, wordDiff, settingsDiff, changed } from "./lib/diff.js";
@@ -37,7 +38,7 @@ const store = {
 let db;
 const ui = {
   sync: { handle: null, state: "off", at: 0, error: "", busy: false, timer: 0 },
-  rolls: {}, comparing: false, cmpPick: [], refPick: null, pendingForeign: null, folder: "all", picking: false, picked: new Set(), renamingFolder: null, tab: "inbox", recipeId: null, openChar: null, openSnip: null, openProfile: null, q: "", filter: "all", sort: "new", lightbox: null, diffId: null,
+  rolls: {}, comparing: false, cmpPick: [], refPick: null, pendingForeign: null, folder: "all", picking: false, picked: new Set(), renamingFolder: null, tab: "inbox", recipeId: null, openChar: null, openSnip: null, renamingCat: null, openProfile: null, q: "", filter: "all", sort: "new", lightbox: null, diffId: null,
   importId: null, sheet: null,
   comfyLive: false, comfyTab: null, bridge: null, syncedRev: -1, focus: null, pendingImport: null, rev: 0
 };
@@ -114,12 +115,28 @@ function orbs(id) {
 }
 
 let toastTimer;
-function toast(msg) {
+// A toast can carry an Undo: it stays up longer and takes clicks while it does.
+let undoFn = null;
+function toast(msg, undo) {
   const t = $("#toast");
   t.textContent = msg;
+  undoFn = undo || null;
+  if (undo) {
+    const b = document.createElement("button");
+    b.className = "toast-undo"; b.dataset.act = "undo"; b.textContent = "Undo";
+    t.append(b);
+  }
+  t.classList.toggle("has-action", !!undo);
   t.classList.add("on");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove("on"), 2600);
+  toastTimer = setTimeout(() => { t.classList.remove("on"); undoFn = null; }, undo ? 6000 : 2600);
+}
+// Runs a deletion with an Undo that puts the touched lists back.
+function undoable(kinds, run, after) {
+  const snap = snapshotLists(db, kinds);
+  const message = run();
+  persist();
+  toast(message, () => { restoreLists(db, snap); persist(); if (after) after(); else draw(); toast("Restored"); });
 }
 async function copy(text, label = "Copied") {
   try { await navigator.clipboard.writeText(text); toast(label); }
@@ -325,7 +342,7 @@ function fileItem(id, as) {
     const dup = findDuplicate(db.snippets, draft);
     if (dup) { toast(`Already in your snippets as ${dup.name}`); return go("snippet/" + dup.id); }
     // A booru post is named after the post, not its character: the tags describe the picture.
-    const cat = post ? "Scenes" : "Unsorted";
+    const cat = post ? "Scenes" : (draft.tags.length && guessCategory(draft.tags)) || "Unsorted";
     const base = post ? `${siteName(post)} ${post.id ? "#" + post.id : "tags"}` : text.split(/[,.]/)[0].slice(0, 32).trim() || "Snippet";
     const sn = { id: uid("sn"), cat, name: uniqueName(db.snippets, base, cat), ...draft };
     db.snippets.unshift(sn);
@@ -1401,7 +1418,10 @@ function drawSnippets() {
   const cats = [...new Set(list.map((x) => x.cat))];
   view.innerHTML = (cats.length ? cats.map((cat) => {
     const items = list.filter((x) => x.cat === cat);
-    return `<div class="sec">${esc(cat)}<span class="aside">${items.length}</span></div>` + items.map(snippetCard).join("");
+    const head = ui.renamingCat === cat
+      ? `<div class="sec cat-edit"><input class="folder-name" id="cat-name" value="${esc(cat)}" aria-label="Category name" spellcheck="false"><button class="link" data-act="cat-rename-save">Save</button></div>`
+      : `<div class="sec">${esc(cat)}<span class="aside"><button class="link" data-act="cat-rename" data-cat="${esc(cat)}" title="Rename this category for all its snippets">Rename</button> · ${items.length}</span></div>`;
+    return head + items.map(snippetCard).join("");
   }).join("") : `<div class="empty"><h3>No <span class="holo-text">snippets</span></h3><p>File tags from the inbox to start a collection.</p></div>`)
     + `<datalist id="snip-cats">${[...new Set(db.snippets.map((x) => x.cat))].map((c) => `<option value="${esc(c)}">`).join("")}</datalist>`;
 }
@@ -1526,7 +1546,23 @@ function drawSettings() {
         <button class="link" data-act="clear-samples">Remove sample items</button>
       </div>
       <p class="hint" style="margin-top:8px">The tag list isn't included; it stays on this device. <b>Import</b> also reads files from FranckyB's Prompt Manager, ComfyAssets' PromptManager, A1111 <span class="mono">styles.csv</span> and tag-complete chants.</p>
-    </section>`;
+    </section>
+    ${duplicatesCard()}`;
+}
+
+// Snippets with the same tags (or prose): keep one, and the others merge into it.
+function duplicatesCard() {
+  const groups = duplicateGroups(db.snippets);
+  return `<div class="sec">Duplicate snippets<span class="aside">${groups.length ? plural(groups.length, "group") : "none"}</span></div>
+    ${groups.length ? `<section class="tk" style="--stub:0px;padding-bottom:14px">
+      <div class="tk-bg"></div>
+      <p class="hint">These have the same tags. Keep one: the others are removed, and recipes that used their wildcards switch to the one you keep.</p>
+      ${groups.map((g) => `<div class="dup-group">
+        <div class="chips">${g[0].tags.slice(0, 6).map((t) => `<span class="chip ro">${esc(t)}</span>`).join("")}${g[0].tags.length > 6 ? `<span class="chip ro">+${g[0].tags.length - 6}</span>` : ""}</div>
+        ${g.map((s) => `<div class="spread dup-row"><span><b>${esc(s.name)}</b> <span class="kv">${esc(s.cat)}${s.prose ? " · has prose" : ""}</span></span>
+          <button class="btn ghost sm" data-act="dup-keep" data-keep="${s.id}" data-drop="${g.filter((o) => o.id !== s.id).map((o) => o.id).join(",")}">Keep this</button></div>`).join("")}
+      </div>`).join("")}
+    </section>` : `<p class="hint">No two snippets have the same tags.</p>`}`;
 }
 
 function exportLibrary() {
@@ -1693,9 +1729,9 @@ document.addEventListener("click", async (e) => {
     case "bulk-del": {
       if (!ui.picked.size) return toast("Pick some recipes first");
       if (!armed(el, `Press again to delete ${ui.picked.size}`)) return;
-      const n = ui.picked.size;
-      db.recipes = db.recipes.filter((x) => !ui.picked.has(x.id)); ui.picked.clear(); persist(); draw();
-      toast(`Deleted ${n} recipe${n > 1 ? "s" : ""}`); break;
+      const n = ui.picked.size, gone = new Set(ui.picked);
+      undoable(["recipes"], () => { db.recipes = db.recipes.filter((x) => !gone.has(x.id)); return `Deleted ${plural(n, "recipe")}`; });
+      ui.picked.clear(); draw(); break;
     }
     case "profile": r.profile = el.dataset.p; persist(); drawRecipe(); break;
     case "edit-profile": ui.openProfile = el.dataset.p; break;
@@ -1704,9 +1740,12 @@ document.addEventListener("click", async (e) => {
       const d = { ...structuredClone(r), id: uid("rec"), no: db.nextNo++, title: r.title + " copy", createdAt: Date.now(), runs: [], versions: [], coverId: null };
       db.recipes.unshift(d); persist(); toast("Duplicated"); go("recipe/" + d.id); break;
     }
-    case "del-recipe":
+    case "del-recipe": {
       if (!armed(el, "Press again to delete")) return;
-      db.recipes = db.recipes.filter((x) => x.id !== r.id); persist(); toast("Recipe deleted"); go("recipes"); break;
+      const id = r.id;
+      undoable(["recipes"], () => { db.recipes = db.recipes.filter((x) => x.id !== id); return "Recipe deleted"; }, () => go("recipe/" + id));
+      go("recipes"); break;
+    }
     case "tag-del": {
       const c = el.closest(".chip");
       r.blocks[c.dataset.i].tags.splice(c.dataset.j, 1); refresh(r); break;
@@ -1836,20 +1875,38 @@ document.addEventListener("click", async (e) => {
       if (!armed(el, "Press again to delete")) return;
       const x = snipById(el.dataset.id);
       const still = recipesUsing(db, x.name).length;
-      removeSnippet(db, x.id);
       if (ui.openSnip === x.id) ui.openSnip = null;
-      persist();
-      toast(`Deleted ${x.name}` + (still ? ` · ${plural(still, "recipe")} still mention ${wildcardToken(x.name)}` : ""));
+      undoable(["snippets"], () => { removeSnippet(db, x.id); return `Deleted ${x.name}` + (still ? ` · ${plural(still, "recipe")} still mention ${wildcardToken(x.name)}` : ""); },
+        () => go("snippet/" + x.id));
       go("snippets"); break;
+    }
+    case "undo": if (undoFn) { const f = undoFn; undoFn = null; f(); } break;
+    case "cat-rename": ui.renamingCat = el.dataset.cat; draw(); { const inp = $("#cat-name"); if (inp) { inp.focus(); inp.select(); } } break;
+    case "cat-rename-save": {
+      const from = ui.renamingCat, to = ($("#cat-name")?.value || "").trim();
+      ui.renamingCat = null;
+      if (!to || to === from) return draw();
+      const res = renameCategory(db, from, to);
+      persist(); draw();
+      toast(`Renamed ${from} to ${to}` + (res.recipes.length ? ` · updated ${plural(res.recipes.length, "recipe")}` : ""));
+      break;
+    }
+    case "dup-keep": {
+      const keep = snipById(el.dataset.keep), drop = el.dataset.drop.split(",");
+      undoable(["snippets", "recipes"], () => {
+        const res = mergeSnippets(db, keep.id, drop);
+        return `Kept ${keep.name} · merged ${res.removed} ${res.removed === 1 ? "copy" : "copies"}` + (res.recipes.length ? ` · updated ${plural(res.recipes.length, "recipe")}` : "");
+      });
+      draw(); break;
     }
     case "cast-del": {
       if (!armed(el, "Press again to delete")) return;
-      const res = removeCharacter(db, el.dataset.c);
-      if (!res) return;
-      if (ui.openChar === res.character.id) ui.openChar = null;
-      const n = res.recipes.length;
-      persist();
-      toast(`Deleted ${res.character.name}` + (n ? ` · removed from ${n} recipe${n > 1 ? "s" : ""}` : ""));
+      const id = el.dataset.c;
+      if (ui.openChar === id) ui.openChar = null;
+      undoable(["characters", "recipes"], () => {
+        const res = removeCharacter(db, id), n = res.recipes.length;
+        return `Deleted ${res.character.name}` + (n ? ` · removed from ${plural(n, "recipe")}` : "");
+      }, () => go("cast/" + id));
       go("characters"); break;
     }
     case "cast-recipe": {
@@ -2054,6 +2111,8 @@ document.addEventListener("keydown", (e) => {
   const t = e.target;
   if (e.key === "Escape" && ui.lightbox) { ui.lightbox = null; return drawLightbox(); }
   if (t.id === "folder-name" && e.key === "Enter") { e.preventDefault(); return $('[data-act="folder-rename-save"]').click(); }
+  if (t.id === "cat-name" && e.key === "Enter") { e.preventDefault(); return $('[data-act="cat-rename-save"]').click(); }
+  if (t.id === "cat-name" && e.key === "Escape") { ui.renamingCat = null; return draw(); }
   if (t.id === "cap-text" && e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); return $('[data-act="capture"]').click(); }
   if (t.classList.contains("lora-add") && e.key === "Enter") {
     e.preventDefault();

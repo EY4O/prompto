@@ -58,7 +58,8 @@ node --test
 | `tags`, `wildcards`, `diff`, `importers`, `sync` | tag lists, wildcard rolls, version diffs, other tools' files, sync merging |
 | `comfy`, `card`, `seed` | loading into a mock ComfyUI graph, share-card chunks, sample data |
 | `cast` | deleting a cast member and the recipe blocks that used them |
-| `snippets` | wildcard names, duplicate detection, unique names, renaming (and rewriting recipes), removal |
+| `snippets` | wildcard names, duplicate detection and merging, unique names, category guesses, renaming snippets and categories (and rewriting recipes), removal |
+| `undo` | restoring deleted items, and making sure a restored item beats its sync tombstone |
 
 GitHub Actions runs the same command on every push (`.github/workflows/test.yml`).
 

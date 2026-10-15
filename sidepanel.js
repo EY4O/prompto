@@ -1,4 +1,4 @@
-import { DEFAULT_PROFILES, STOCKS, huesOf, BLOCK_TYPES, render, draftProse, loraBase, estimateClipTokens, lint, toA1111, looksLikeTags, parseTags, profileFor } from "./lib/render.js";
+import { DEFAULT_PROFILES, OLD_ANIMA, STOCKS, huesOf, BLOCK_TYPES, render, draftProse, loraBase, estimateClipTokens, lint, toA1111, looksLikeTags, parseTags, profileFor } from "./lib/render.js";
 import { DEFAULT_TEMPLATES, SLOT_HELP, proseFromTags } from "./lib/prose.js";
 import { readRecipeFromFile, parseComfy } from "./lib/pngmeta.js";
 import { fromMeta as toRecipe1 } from "./lib/recipe1.js";
@@ -53,6 +53,15 @@ const persist = () => {
 function migrate(d) {
   for (const k of ["inbox", "recipes", "characters", "snippets"]) if (!Array.isArray(d[k])) d[k] = [];
   if (!d.profiles || !Object.keys(d.profiles).length) d.profiles = structuredClone(DEFAULT_PROFILES);
+  // Anima's starting profile now follows its model card. Fields still at the old
+  // defaults catch up; anything the user changed stays as they left it.
+  const anima = d.profiles.anima;
+  if (anima && anima.artistAt === undefined) {
+    anima.artistAt = true;
+    for (const [k, old] of Object.entries(OLD_ANIMA)) {
+      if (JSON.stringify(anima[k]) === JSON.stringify(old)) anima[k] = structuredClone(DEFAULT_PROFILES.anima[k]);
+    }
+  }
   d.settings = { comfyUrl: DEFAULT_COMFY, onlineTags: true, proseTemplates: {}, autoResults: true, deviceName: "", ...(d.settings || {}) };
   if (!d.settings.deviceName) d.settings.deviceName = "Device " + Math.random().toString(36).slice(2, 6).toUpperCase();
   if (!Array.isArray(d.tombstones)) d.tombstones = [];
@@ -334,7 +343,8 @@ function fileItem(id, as) {
     go("import/" + id);
   } else if (as === "snippet") {
     const post = item.kind === "booru" ? postOf(item) : null;
-    const text = post ? post.general.join(", ") : item.text;
+    // A post's artists come along as @artist tags; each profile decides whether to keep the @.
+    const text = post ? [...post.artists.map((x) => "@" + x), ...post.general].join(", ") : item.text;
     const tags = !!post || looksLikeTags(text);
     const draft = { tags: tags ? parseTags(text).map((x) => x.t) : [], prose: tags ? "" : text };
     done();
@@ -1461,6 +1471,7 @@ function profileTicket(p) {
       ${check("weights", "Write weights as (tag:1.2)", p.weights)}
       ${check("clip", "Show the CLIP token counter", p.clip)}
       ${p.format !== "tags" ? check("autoProse", "Draft prose from tags when a block has none", p.autoProse !== false) : ""}
+      ${p.format !== "prose" ? check("artistAt", "Write artist tags as @name (type @ before an artist to mark one)", p.artistAt) : ""}
       <div class="group-label">Quality tags, added first in tag output</div>
       <div class="chips">${strChips(p.prefix, `profile|${p.id}|prefix`)}</div>
       <div class="group-label">Default negative</div>
@@ -1955,7 +1966,7 @@ document.addEventListener("click", async (e) => {
     case "pf-format": pf.format = el.dataset.v; persist(); draw(); break;
     case "pf-stock": pf.stock = el.dataset.v; persist(); draw(); break;
     case "pf-new": {
-      const p = { id: uid("pf"), label: "New profile", base: "", format: "tags", weights: true, clip: true, prefix: [], negative: "", hint: "", stock: "lilac" };
+      const p = { id: uid("pf"), label: "New profile", base: "", format: "tags", weights: true, clip: true, prefix: [], negative: "", hint: "", stock: "lilac", artistAt: false };
       db.profiles[p.id] = p; ui.openProfile = p.id; persist(); draw(); break;
     }
     case "pf-dup": {

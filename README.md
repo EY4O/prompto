@@ -100,6 +100,7 @@ A **model profile** decides how the blocks become a prompt:
 | Token counter | Shows an approximate CLIP token count and how many 75-token chunks it uses |
 | Quality tags | Added first in tag output, e.g. `masterpiece, best quality` |
 | Default negative | Used unless the recipe has its own; can be turned off (Flux Krea runs at CFG 1) |
+| Artist tags | Tags written `@name` are artists. Anima keeps the `@` (its model card says artist tags barely work without it); the other profiles write the bare name. Type `@` before a name, pick an artist from autocomplete, or file a booru post as a snippet to get one |
 
 The four starting profiles (Illustrious, Anima, Flux Krea, Qwen Image) are suggestions. Edit them, duplicate them, or add your own in **Settings → Model profiles**, and **Reset** restores a starting profile.
 </details>

@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
-  DEFAULT_PROFILES, render, lint, toA1111, parseTags, estimateClipTokens, fmtTag, loraBase, looksLikeTags, resolveBlocks
+  DEFAULT_PROFILES, render, lint, toA1111, parseTags, estimateClipTokens, fmtTag, isArtist, loraBase, looksLikeTags, resolveBlocks
 } from "../lib/render.js";
 import { SEED } from "../lib/seed.js";
 
@@ -37,7 +37,7 @@ describe("render() per default profile", () => {
     const db = seedDb();
     const out = render(recipe(db, "rec_1"), P.anima, db);
     const [tags, prose] = out.positive.split("\n\n");
-    assert.ok(tags.startsWith("masterpiece, best quality, rin_aozora"));
+    assert.ok(tags.startsWith("masterpiece, best quality, score_7, safe, rin_aozora"));
     assert.ok(tags.includes("backlighting") && !tags.includes("(backlighting:1.2)"));
     assert.ok(prose.startsWith("A young woman with long silver hair in twin braids"));
     // the camera block has no prose, so it's drafted and reported
@@ -256,5 +256,30 @@ describe("profileFor", () => {
     assert.equal(profileFor("Qwen-Rapid-AIO", "1girl"), "qwen");
     assert.equal(profileFor("", "1girl, solo, smile, red eyes"), "illustrious");
     assert.equal(profileFor("", "A quiet street at night, lit by neon signs and rain"), "krea");
+  });
+});
+
+describe("artist tags", () => {
+  const r = { blocks: [{ type: "style", tags: T("@big chungus", "@_@", "watercolor"), prose: "" }] };
+  test("isArtist: @name is an artist, the @_@ emoticon isn't", () => {
+    assert.ok(isArtist("@big chungus"));
+    assert.ok(!isArtist("@_@"));
+    assert.ok(!isArtist("big chungus"));
+  });
+  test("Anima keeps the @; Illustrious writes the bare name", () => {
+    assert.match(render(r, P.anima, castDb()).positive, /score_7, safe, @big chungus, @_@, watercolor/);
+    assert.match(render(r, P.illustrious, castDb()).positive, /newest, big chungus, @_@, watercolor/);
+  });
+  test("weights wrap the written name", () => {
+    assert.equal(fmtTag({ t: "@x", w: 1.2 }, true, false), "(x:1.2)");
+    assert.equal(fmtTag({ t: "@x", w: 1.2 }, true, true), "(@x:1.2)");
+  });
+  test("drafted prose leaves artists out", () => {
+    const out = render(r, P.anima, castDb());
+    assert.ok(!out.positive.split("\n\n")[1].includes("chungus"));
+  });
+  test("Anima's defaults follow the model card", () => {
+    assert.deepEqual(P.anima.prefix, ["masterpiece", "best quality", "score_7", "safe"]);
+    assert.match(P.anima.negative, /score_1, score_2, score_3/);
   });
 });

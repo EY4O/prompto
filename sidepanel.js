@@ -1,10 +1,11 @@
-import { DEFAULT_PROFILES, OLD_ANIMA, STOCKS, huesOf, BLOCK_TYPES, render, draftProse, loraBase, estimateClipTokens, lint, toA1111, looksLikeTags, parseTags, profileFor } from "./lib/render.js";
+import { snapshot as librarySnapshot, castDraft as draftCast } from "./lib/snapshot.js";
+import { DEFAULT_PROFILES, OLD_ANIMA, OLD_HINTS, usesProfileSettings, applyProfileSettings, settingsSummary, STOCKS, huesOf, BLOCK_TYPES, render, draftProse, loraBase, estimateClipTokens, lint, toA1111, looksLikeTags, parseTags, profileFor } from "./lib/render.js";
 import { DEFAULT_TEMPLATES, SLOT_HELP, proseFromTags } from "./lib/prose.js";
 import { readRecipeFromFile, parseComfy } from "./lib/pngmeta.js";
 import { fromMeta as toRecipe1 } from "./lib/recipe1.js";
 import { SEED } from "./lib/seed.js";
 import { removeCharacter, sortCast, seriesOf } from "./lib/cast.js";
-import { wildcardToken, findDuplicate, duplicateGroups, sortSnippets, uniqueName, guessCategory, recipesUsing, renameSnippet, renameCategory, mergeSnippets, removeSnippet } from "./lib/snippets.js";
+import { wildcardToken, findDuplicate, duplicateGroups, sortSnippets, uniqueName, guessCategory, recipesUsing, renameSnippet, renameCategory, mergeSnippets, removeSnippet, wildcardFiles } from "./lib/snippets.js";
 import { snapshotLists, restoreLists } from "./lib/undo.js";
 import { loadTagList, importTagCsv, clearTagList, tagListInfo, searchLocal, libraryTags, searchLibrary, searchDanbooru } from "./lib/tags.js";
 import { attachAutocomplete } from "./lib/autocomplete.js";
@@ -15,7 +16,7 @@ import { stamp, fingerprints, merge as mergeSync, toSyncFile, fromSyncFile, appl
 import * as syncfs from "./lib/syncfs.js";
 import { hasWildcards, wildcardNames, expand, seededRandom, slug } from "./lib/wildcards.js";
 import { fetchLook, draftCharacter, postFromGroups, sceneTags } from "./lib/booru.js";
-import { DEFAULT_COMFY, normalizeBase, originPattern, ping, findTabs, queueGraph, applyInTab, bridgeCall, fetchLoras, queueInTab } from "./lib/comfy.js";
+import { DEFAULT_COMFY, normalizeBase, originPattern, ping, findTabs, queueGraph, applyInTab, bridgeCall, fetchLoras, queueInTab, graphInTab, queueGraphInTab } from "./lib/comfy.js";
 
 const hasChrome = typeof chrome !== "undefined" && chrome.storage && chrome.storage.local;
 const $ = (s, el = document) => el.querySelector(s);
@@ -38,7 +39,7 @@ const store = {
 let db;
 const ui = {
   sync: { handle: null, state: "off", at: 0, error: "", busy: false, timer: 0 },
-  rolls: {}, comparing: false, cmpPick: [], refPick: null, pendingForeign: null, folder: "all", picking: false, picked: new Set(), renamingFolder: null, tab: "inbox", recipeId: null, openChar: null, openSnip: null, renamingCat: null, castSeries: "all", castSort: "added", snipCat: "all", snipSort: "added", openProfile: null, q: "", filter: "all", sort: "new", lightbox: null, diffId: null,
+  rolls: {}, qpPick: {}, comparing: false, cmpPick: [], refPick: null, pendingForeign: null, folder: "all", picking: false, picked: new Set(), renamingFolder: null, tab: "inbox", recipeId: null, openChar: null, openSnip: null, renamingCat: null, castSeries: "all", castSort: "added", snipCat: "all", snipSort: "added", openProfile: null, q: "", filter: "all", sort: "new", lightbox: null, diffId: null,
   importId: null, sheet: null,
   comfyLive: false, comfyTab: null, bridge: null, syncedRev: -1, focus: null, pendingImport: null, rev: 0
 };
@@ -62,6 +63,13 @@ function migrate(d) {
       if (JSON.stringify(anima[k]) === JSON.stringify(old)) anima[k] = structuredClone(DEFAULT_PROFILES.anima[k]);
     }
   }
+  // Starting profiles got real sampler settings in 0.24.0; their old notes said the same thing.
+  for (const [id, p] of Object.entries(d.profiles)) {
+    const def = DEFAULT_PROFILES[id];
+    if (!def) continue;
+    if (!p.settings) p.settings = structuredClone(def.settings);
+    if ((OLD_HINTS[id] || []).includes(p.hint)) p.hint = def.hint;
+  }
   d.settings = { comfyUrl: DEFAULT_COMFY, onlineTags: true, proseTemplates: {}, autoResults: true, deviceName: "", ...(d.settings || {}) };
   if (!d.settings.deviceName) d.settings.deviceName = "Device " + Math.random().toString(36).slice(2, 6).toUpperCase();
   if (!Array.isArray(d.tombstones)) d.tombstones = [];
@@ -83,6 +91,7 @@ const uid = (p) => p + "_" + Date.now().toString(36) + Math.random().toString(36
 const pad = (n, l = 3) => String(n).padStart(l, "0");
 const titleCase = (s) => s.replace(/\b\w/g, (c) => c.toUpperCase());
 const profileOf = (r) => db.profiles[r.profile] || Object.values(db.profiles)[0];
+const profileLabel = (id) => (db.profiles[id] && db.profiles[id].label) || id;
 const FORMAT_LABEL = { tags: "Tags", hybrid: "Tags + prose", prose: "Prose" };
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
@@ -318,11 +327,13 @@ function fileItem(id, as) {
     if (item.kind === "text") {
       const tags = looksLikeTags(item.text);
       r.profile = guessProfile("", item.text);
+      applyProfileSettings(r.settings, db.profiles[r.profile]);
       r.title = item.text.replace(/^idea:\s*/i, "").split(/[,.]/)[0].slice(0, 40);
       r.blocks = [{ type: "subject", tags: tags ? parseTags(item.text) : [], prose: tags ? "" : item.text.replace(/^idea:\s*/i, "") }];
     } else if (item.kind === "png") {
       const m = item.meta;
       r.profile = guessProfile(m.settings.model || "", m.positive, m.settings.baseModel);
+      applyProfileSettings(r.settings, db.profiles[r.profile]); // the file's own settings go on top below
       r.title = (item.title || "Imported").replace(/\.\w+$/, "").slice(0, 40);
       const tags = looksLikeTags(m.positive);
       r.blocks = [{ type: "subject", tags: tags ? parseTags(m.positive) : [], prose: tags ? "" : m.positive }];
@@ -546,10 +557,11 @@ async function handleFiles(files) {
 // ---------- Recipes ----------
 function newRecipe() {
   const first = db.profiles.illustrious ? "illustrious" : Object.keys(db.profiles)[0];
+  const settings = { model: "", loras: [], sampler: "euler_ancestral", scheduler: "normal", steps: 28, cfg: 5, seed: Math.floor(Math.random() * 1e9), width: 832, height: 1216 };
   return {
     id: uid("rec"), no: db.nextNo++, title: "Untitled", profile: first, fav: false, createdAt: Date.now(),
     blocks: [], negative: "",
-    settings: { model: "", loras: [], sampler: "euler_ancestral", scheduler: "normal", steps: 28, cfg: 5, seed: Math.floor(Math.random() * 1e9), width: 832, height: 1216 }
+    settings: applyProfileSettings(settings, db.profiles[first])
   };
 }
 
@@ -689,7 +701,64 @@ function drawOutput(r) {
     </div>
     ${out.wild ? `<div class="actions" style="margin-top:6px"><button class="btn ghost sm" data-act="queue-variants" title="Loads and queues several rolls on the same seed">Queue variants</button>
       <select id="variant-count" aria-label="How many variants">${[2, 3, 4, 6].map((n) => `<option ${n === 3 ? "selected" : ""}>${n}</option>`).join("")}</select></div>` : ""}
+    ${queueProfilesHtml(r)}
   </section>`;
+}
+
+// One recipe on several models: each profile with a saved workflow runs it with
+// this recipe's prompt (rendered for that profile) and seed.
+const withWorkflow = () => Object.values(db.profiles).filter((p) => p.workflow && p.workflow.graph);
+const qpPicked = (r) => ui.qpPick[r.id] || withWorkflow().map((p) => p.id);
+function queueProfilesHtml(r) {
+  const ps = withWorkflow();
+  if (!ps.length) return "";
+  const picked = qpPicked(r);
+  return `<div class="actions qp" style="margin-top:6px">
+      <button class="btn ghost sm" data-act="queue-profiles" title="Queues this recipe in each picked profile's saved workflow, with the prompt written for that profile">Queue on profiles</button>
+      ${ps.map((p) => `<button class="chip-toggle" data-act="qp-toggle" data-p="${esc(p.id)}" aria-pressed="${picked.includes(p.id)}">${esc(p.label)}</button>`).join("")}
+    </div>`;
+}
+
+async function queueOnProfiles(r) {
+  if (!hasChrome) return toast("Load Prompto as an extension to reach ComfyUI");
+  const ps = qpPicked(r).map((id) => db.profiles[id]).filter((p) => p && p.workflow && p.workflow.graph);
+  if (!ps.length) return toast("Pick at least one profile");
+  const tab = await comfyTab();
+  if (!tab) return toast("Open ComfyUI in a browser tab first");
+  saveVersion(r, "queued on " + ps.map((p) => p.label).join(", "));
+  const done = [];
+  for (const p of ps) {
+    const w = p.workflow, out = finalOut(r, rollOf(r), p), g = structuredClone(w.graph);
+    if (!g[w.pos.id]) { toast(`${p.label}'s workflow lost its prompt box. Save it again in Settings.`); continue; }
+    g[w.pos.id].inputs[w.pos.key] = out.positive;
+    if (w.neg && g[w.neg.id] && out.negative != null) g[w.neg.id].inputs[w.neg.key] = out.negative;
+    if (w.seed && g[w.seed.id] && r.settings.seed != null) g[w.seed.id].inputs[w.seed.key] = Number(r.settings.seed);
+    const key = promptKey(out.positive);
+    db.recentSends = [{ recipeId: r.id, key, at: Date.now(), profile: p.id }, ...db.recentSends.filter((x) => x.key !== key)].slice(0, 40);
+    try {
+      const res = await queueGraphInTab(tab.id, g);
+      if (!res || !res.ok) { toast(`${p.label}: ${(res && res.error) || "ComfyUI didn't respond"}`); break; }
+      done.push(p.label);
+    } catch { toast("Couldn't reach the ComfyUI tab"); break; }
+  }
+  persist(); drawVersions(r);
+  if (done.length) toast(`Queued on ${done.join(", ")}. The images come back to Results.`);
+}
+
+// Saves the workflow open in ComfyUI as the one this profile queues.
+async function saveProfileWorkflow(p) {
+  if (!hasChrome) return toast("Load Prompto as an extension to reach ComfyUI");
+  const tab = await comfyTab();
+  if (!tab) return toast("Open ComfyUI in a browser tab first");
+  const res = await graphInTab(tab.id).catch(() => null);
+  if (!res || !res.ok) return toast((res && res.error) || "Couldn't read the workflow");
+  let meta;
+  try { meta = parseComfy(res.graph); } catch { meta = null; }
+  if (!meta || !meta.comfy.pos) return toast("Couldn't find a prompt box in that workflow");
+  const { pos, neg, seed } = meta.comfy;
+  p.workflow = { graph: res.graph, pos, neg, seed, model: meta.settings.model || "", at: Date.now() };
+  persist(); draw();
+  toast(`${p.label} will queue this workflow`);
 }
 
 function drawRecipe() {
@@ -715,7 +784,7 @@ function drawRecipe() {
       <div class="profiles" role="group" aria-label="Model profile">
         ${Object.values(db.profiles).map((x) => `<button data-act="profile" data-p="${esc(x.id)}" aria-pressed="${x.id === p.id}"><b>${esc(x.label)}</b><small>${esc(x.base)}</small></button>`).join("")}
       </div>
-      <p class="profile-hint kv">${esc(p.hint)}${p.weights ? " · weights on" : " · weights ignored"} · <a class="link" href="#settings" data-act="edit-profile" data-p="${esc(p.id)}">Edit profile</a></p>
+      <p class="profile-hint kv">${esc([settingsSummary(p), p.hint].filter(Boolean).join(" · "))}${p.weights ? " · weights on" : " · weights ignored"} · <a class="link" href="#settings" data-act="edit-profile" data-p="${esc(p.id)}">Edit profile</a>${p.settings && !usesProfileSettings(s, p) ? ` · <button class="link" data-act="use-pf-settings" title="Sampler, scheduler, steps, CFG and size from the profile; the seed and model stay">Use ${esc(p.label)}'s settings</button>` : ""}</p>
       <label class="recipe-folder">Folder <select id="recipe-folder"><option value="">Unfiled</option>${db.folders.map((fo) => `<option value="${fo.id}" ${r.folder === fo.id ? "selected" : ""}>${esc(fo.name)}</option>`).join("")}</select></label>
     </section>
 
@@ -823,8 +892,8 @@ const rollOf = (r) => ui.rolls[r.id] || 1;
 const expandText = (r, text, part, roll = rollOf(r)) => expand(text, seededRandom(`${r.id}:${roll}:${part}`), wildcardEntries);
 
 // The prompt as it leaves Prompto: rendered, then wildcards rolled.
-function finalOut(r, roll = rollOf(r)) {
-  const out = render(r, profileOf(r), db);
+function finalOut(r, roll = rollOf(r), profile = profileOf(r)) {
+  const out = render(r, profile, db);
   const wild = hasWildcards(out.positive) || hasWildcards(out.negative || "");
   return {
     ...out, wild, template: out.positive,
@@ -1049,6 +1118,9 @@ function matchRecipe(positive) {
 
 function addRun(r, run) {
   if (!run.thumb) return false;
+  // Results queued on another profile's workflow say which one.
+  const sent = run.positive && !run.profile && db.recentSends.find((x) => x.profile && x.key === promptKey(run.positive));
+  if (sent) run = { ...run, profile: sent.profile };
   r.runs = r.runs || [];
   if (run.filename && r.runs.some((x) => x.filename === run.filename && x.source === run.source)) return false;
   r.runs.unshift({ id: uid("run"), at: Date.now(), rating: 0, ...run });
@@ -1074,7 +1146,7 @@ function resultsHtml(r) {
     ${picking ? `<div class="cmp-bar"><span class="kv">Pick 2 to 4 results · ${ui.cmpPick.length} picked</span><button class="btn sm" data-act="cmp-open">Side by side <i aria-hidden="true">→</i></button></div>` : ""}
     ${runs.length ? `<div class="runs${picking ? " picking" : ""}">${runs.map((x) => `<figure class="run${r.coverId === x.id ? " is-cover" : ""}${picking && ui.cmpPick.includes(x.id) ? " cmp-on" : ""}">
         <button class="run-img" data-act="${picking ? "cmp-pick" : "run-open"}" data-run="${x.id}" aria-label="${picking ? "Pick for comparison" : "Open result"}"><img src="${esc(x.thumb)}" alt="">${picking && ui.cmpPick.includes(x.id) ? `<span class="cmp-n">${ui.cmpPick.indexOf(x.id) + 1}</span>` : ""}</button>
-        <figcaption>${starButtons(x, "grid")}<span class="kv">${ago(x.at)}</span></figcaption>
+        <figcaption>${starButtons(x, "grid")}<span class="kv">${x.profile ? esc(profileLabel(x.profile)) + " · " : ""}${ago(x.at)}</span></figcaption>
       </figure>`).join("")}</div>`
       : `<p class="hint">Images made with this recipe land here: ComfyUI-Prompto captures them automatically, or drop a PNG on the panel and choose <b>Results</b> in the inbox.</p>`}`;
 }
@@ -1089,6 +1161,7 @@ function drawCompareBox(box, lb) {
   const cell = (x, i) => {
     let diff = "";
     if (i === 0) diff = `<p class="kv">baseline</p>`;
+    else if ((x.profile || "") !== (base.profile || "")) diff = `<p class="kv">another model profile</p>`;
     else if (!x.positive || !base.positive) diff = `<p class="kv">prompt not recorded</p>`;
     else {
       const ops = tagDiff(base.positive, x.positive);
@@ -1097,7 +1170,7 @@ function drawCompareBox(box, lb) {
     return `<figure class="cmp-cell">
       <img src="${esc(x.thumb)}" alt="">
       <figcaption>
-        <div class="spread">${starButtons(x, "compare")}<span class="kv">${x.seed != null ? "seed " + esc(x.seed) : ""}</span></div>
+        <div class="spread">${starButtons(x, "compare")}<span class="kv">${esc([x.profile && profileLabel(x.profile), x.seed != null && "seed " + x.seed].filter(Boolean).join(" · "))}</span></div>
         ${x.seed != null && base.seed != null && i > 0 && String(x.seed) !== String(base.seed) ? `<p class="kv">different seed</p>` : ""}
         ${diff}
       </figcaption>
@@ -1150,7 +1223,7 @@ function drawLightbox() {
     <img src="${esc(run.thumb)}" alt="">
     <div class="lb-meta">
       <div class="spread">${starButtons(run, "lightbox")}<span class="kv">${i + 1} of ${r.runs.length}</span></div>
-      <p class="kv">${esc([run.source, run.seed != null && "seed " + run.seed, new Date(run.at).toLocaleString()].filter(Boolean).join(" · "))}</p>
+      <p class="kv">${esc([run.source, run.profile && profileLabel(run.profile), run.seed != null && "seed " + run.seed, new Date(run.at).toLocaleString()].filter(Boolean).join(" · "))}</p>
       <div class="actions" style="margin-top:8px">
         <button class="btn ghost sm" data-act="run-cover" data-run="${run.id}">${r.coverId === run.id ? "Cover ✓" : "Use as cover"}</button>
         ${run.seed != null ? `<button class="btn ghost sm" data-act="run-seed" data-run="${run.id}">Use seed</button>` : ""}
@@ -1220,26 +1293,26 @@ async function queueSaved(r) {
   catch (e) { toast(e.message || "Couldn't reach ComfyUI"); }
 }
 
-// What the ComfyUI sidebar shows: prompts already rendered, so the ComfyUI side
-// never needs Prompto's rendering rules.
-function snapshot() {
-  return {
-    syncedAt: Date.now(),
-    recipes: db.recipes.map((r) => {
-      const p = profileOf(r);
-      const out = render(r, p, db);
-      const thumb = r.image && r.image.startsWith("data:") && r.image.length < 80000 ? r.image : null;
-      return { id: r.id, no: r.no, title: r.title, profile: p.label, fav: !!r.fav, positive: out.positive, negative: out.negative, settings: r.settings, thumb };
-    }),
-    snippets: db.snippets.map(({ id, cat, name, tags, prose }) => ({ id, cat, name, tags, prose })),
-    cast: db.characters.map((c) => ({
-      id: c.id, name: c.name, series: c.series, tags: [c.trigger, ...c.appearance].filter(Boolean), prose: c.prose,
-      // Drafted prose too, so the Prompto Character node can write prose for any cast member.
-      proseDraft: c.prose ? "" : castDraft(c),
-      outfits: Object.entries(c.outfits).map(([name, o]) => ({ name, tags: o.tags, prose: o.prose, proseDraft: o.prose ? "" : castDraft(c, name) }))
-    }))
-  };
+// Writes snippets as wildcard .txt files into a folder you pick, such as Impact
+// Pack's wildcards folder or Forge's Dynamic Prompts wildcards folder.
+async function exportWildcards() {
+  if (!syncfs.supported()) return toast("This browser can't write to folders");
+  const files = wildcardFiles(db.snippets);
+  if (!files.length) return toast("No snippets to export yet");
+  let dir;
+  try { dir = await window.showDirectoryPicker({ id: "prompto-wildcards", mode: "readwrite" }); } catch { return; }
+  try {
+    for (const f of files) {
+      const w = await (await dir.getFileHandle(f.name, { create: true })).createWritable();
+      await w.write(f.text);
+      await w.close();
+    }
+    toast(`Wrote ${plural(files.length, "wildcard file")} to ${dir.name}`);
+  } catch (e) { toast("Couldn't write there: " + (e.message || e)); }
 }
+
+// What the ComfyUI side gets; see lib/snapshot.js.
+const snapshot = () => librarySnapshot(db);
 
 function captureToInbox(cap) {
   const base = { id: "in_" + cap.id, createdAt: cap.createdAt || Date.now(), source: cap.source || "ComfyUI" };
@@ -1357,9 +1430,7 @@ function refStrip(c, outfit, editable) {
 }
 
 const templates = () => db.settings.proseTemplates;
-const castDraft = (c, outfit) => outfit
-  ? proseFromTags("outfit", c.outfits[outfit].tags, templates())
-  : proseFromTags("character", c.appearance, templates(), { name: c.name });
+const castDraft = (c, outfit) => draftCast(c, outfit, templates());
 
 function castTicket(c, i) {
   const open = ui.openChar === c.id;
@@ -1460,11 +1531,19 @@ function profileTicket(p) {
   const open = ui.openProfile === p.id;
   const used = db.recipes.filter((r) => r.profile === p.id).length;
   const check = (k, label, on) => `<label class="check"><input type="checkbox" data-pf="${k}" data-p="${esc(p.id)}" ${on ? "checked" : ""}> ${label}</label>`;
+  const ps = p.settings || {};
+  const pfField = (k, label, val) => `<label>${label}<input data-pfs="${k}" data-p="${esc(p.id)}" value="${esc(val ?? "")}" spellcheck="false"></label>`;
   const editor = open ? `<div class="pf-edit">
       <div class="settings-grid">
         <label>Name<input data-pf="label" data-p="${esc(p.id)}" value="${esc(p.label)}"></label>
         <label>Short note<input data-pf="base" data-p="${esc(p.id)}" value="${esc(p.base)}"></label>
-        <label class="full">Suggested settings<input data-pf="hint" data-p="${esc(p.id)}" value="${esc(p.hint)}"></label>
+        <label class="full">Note<input data-pf="hint" data-p="${esc(p.id)}" value="${esc(p.hint)}"></label>
+      </div>
+      <div class="group-label">Settings for new recipes</div>
+      <div class="settings-grid">
+        ${pfField("sampler", "Sampler", ps.sampler)}${pfField("scheduler", "Scheduler", ps.scheduler)}
+        ${pfField("steps", "Steps", ps.steps)}${pfField("cfg", "CFG", ps.cfg)}
+        ${pfField("size", "Size", ps.width ? ps.width + "x" + ps.height : "")}
       </div>
       <div class="group-label">Output</div>
       <div class="seg" role="group" aria-label="Output format">${["tags", "hybrid", "prose"].map((v) => `<button data-act="pf-format" data-p="${esc(p.id)}" data-v="${v}" aria-pressed="${p.format === v}">${FORMAT_LABEL[v]}</button>`).join("")}</div>
@@ -1477,6 +1556,9 @@ function profileTicket(p) {
       <div class="group-label">Default negative</div>
       ${check("hasNeg", "This model uses a negative prompt", p.negative !== null)}
       ${p.negative !== null ? `<textarea class="prose" data-pf="negative" data-p="${esc(p.id)}" rows="1" placeholder="lowres, worst quality, …">${esc(p.negative)}</textarea>` : ""}
+      <div class="group-label">Workflow for Queue on profiles</div>
+      ${p.workflow ? `<p class="kv">Saved ${esc(ago(p.workflow.at))}${p.workflow.model ? " · " + esc(p.workflow.model) : ""}</p>` : `<p class="hint">Open a workflow made for this model in ComfyUI, then save it here. Recipes can then queue on several profiles at once and compare the results.</p>`}
+      <div class="row"><button class="btn ghost sm" data-act="pf-workflow" data-p="${esc(p.id)}">${p.workflow ? "Replace with the open workflow" : "Use the open ComfyUI workflow"}</button>${p.workflow ? `<button class="link" data-act="pf-workflow-forget" data-p="${esc(p.id)}">Forget</button>` : ""}</div>
       <div class="group-label">Paper</div>
       <div class="row">${Object.keys(STOCKS).map((k) => `<button class="swatch" style="${STOCKS[k]}" data-act="pf-stock" data-p="${esc(p.id)}" data-v="${k}" aria-pressed="${p.stock === k}" aria-label="${k}" title="${k}"></button>`).join("")}</div>
     </div>` : "";
@@ -1484,7 +1566,7 @@ function profileTicket(p) {
     <div class="tk-bg"></div>
     <div class="tk-head"><span class="tag">${esc(FORMAT_LABEL[p.format])}</span><span class="num">${used} recipe${used === 1 ? "" : "s"}</span></div>
     <h3 class="tk-title">${esc(p.label)}</h3>
-    <p class="kv" style="margin-top:6px">${esc([p.base, p.hint].filter(Boolean).join(" · "))}</p>
+    <p class="kv" style="margin-top:6px">${esc([p.base, settingsSummary(p), p.hint].filter(Boolean).join(" · "))}</p>
     ${editor}
     <div class="row" style="margin-top:10px">
       <button class="link" data-act="pf-toggle" data-p="${esc(p.id)}">${open ? "Done" : "Edit"}</button>
@@ -1569,6 +1651,7 @@ function drawSettings() {
         </div>` : ""}
       <div class="row" style="margin-top:10px">
         <button class="btn sm" data-act="export">Export <i aria-hidden="true">→</i></button>
+        <button class="btn ghost sm" data-act="export-wildcards" title="One .txt per snippet and per category, for Impact Pack's wildcards folder or Forge's Dynamic Prompts">Export wildcards</button>
         <label class="btn ghost sm" for="import-file" style="cursor:pointer" title="A Prompto backup, or a file from FranckyB Prompt Manager, ComfyAssets PromptManager, A1111 styles.csv or tag-complete chants">Import</label>
         <input type="file" id="import-file" class="sr-only" accept=".json,.csv,application/json,text/csv">
         <button class="link" data-act="clear-samples">Remove sample items</button>
@@ -1640,8 +1723,8 @@ function applyForeign() {
     const r = newRecipe();
     const set = Object.fromEntries(Object.entries(x.settings || {}).filter(([, v]) => v !== undefined && v !== "" && v !== null));
     Object.assign(r, { title: x.title, blocks: x.blocks, negative: x.negative, fav: x.fav, image: x.image || null, importKey: promptKey(x.positive) });
-    r.settings = { ...r.settings, ...set, loras: set.loras || [] };
-    r.profile = guessProfile(r.settings.model || "", x.positive, r.settings.baseModel);
+    r.profile = guessProfile(set.model || "", x.positive, set.baseModel);
+    r.settings = { ...applyProfileSettings(r.settings, db.profiles[r.profile]), ...set, loras: set.loras || [] };
     db.recipes.unshift(r);
   }
   const msg = [f.recipes.length && `${f.recipes.length} recipe${f.recipes.length > 1 ? "s" : ""}`, f.snippets.length && `${f.snippets.length} snippet${f.snippets.length > 1 ? "s" : ""}`].filter(Boolean).join(" and ");
@@ -1763,7 +1846,13 @@ document.addEventListener("click", async (e) => {
       undoable(["recipes"], () => { db.recipes = db.recipes.filter((x) => !gone.has(x.id)); return `Deleted ${plural(n, "recipe")}`; });
       ui.picked.clear(); draw(); break;
     }
-    case "profile": r.profile = el.dataset.p; persist(); drawRecipe(); break;
+    case "profile": {
+      // Settings follow the profile until they're changed by hand.
+      const to = db.profiles[el.dataset.p];
+      if (usesProfileSettings(r.settings, profileOf(r))) applyProfileSettings(r.settings, to);
+      r.profile = to.id; persist(); drawRecipe(); break;
+    }
+    case "use-pf-settings": applyProfileSettings(r.settings, profileOf(r)); persist(); drawRecipe(); toast(`Using ${profileOf(r).label}'s settings`); break;
     case "edit-profile": ui.openProfile = el.dataset.p; break;
     case "fav": r.fav = !r.fav; persist(); drawRecipe(); break;
     case "dup": {
@@ -1804,6 +1893,12 @@ document.addEventListener("click", async (e) => {
     case "copy-raw": copy(finalOut(r).template, "Copied with wildcards"); break;
     case "roll": ui.rolls[r.id] = Math.max(1, rollOf(r) + Number(el.dataset.d)); drawOutput(r); break;
     case "queue-variants": return queueVariants(r, Number($("#variant-count").value));
+    case "queue-profiles": return queueOnProfiles(r);
+    case "qp-toggle": {
+      const cur = new Set(qpPicked(r));
+      if (cur.has(el.dataset.p)) cur.delete(el.dataset.p); else cur.add(el.dataset.p);
+      ui.qpPick[r.id] = [...cur]; drawOutput(r); break;
+    }
     case "copy-neg": copy(finalOut(r).negative || "", "Negative copied"); break;
     case "copy-a1111": noteSend(r, finalOut(r).positive, "copied for Forge"); drawVersions(r); copy(toA1111(r, profileOf(r), db, (t, part) => (hasWildcards(t) ? expandText(r, t, part) : t)), "Copied. Paste it into Forge, then press ↙"); break;
     case "comfy-load": {
@@ -1966,7 +2061,7 @@ document.addEventListener("click", async (e) => {
     case "pf-format": pf.format = el.dataset.v; persist(); draw(); break;
     case "pf-stock": pf.stock = el.dataset.v; persist(); draw(); break;
     case "pf-new": {
-      const p = { id: uid("pf"), label: "New profile", base: "", format: "tags", weights: true, clip: true, prefix: [], negative: "", hint: "", stock: "lilac", artistAt: false };
+      const p = { id: uid("pf"), label: "New profile", base: "", format: "tags", weights: true, clip: true, prefix: [], negative: "", hint: "", stock: "lilac", artistAt: false, settings: {} };
       db.profiles[p.id] = p; ui.openProfile = p.id; persist(); draw(); break;
     }
     case "pf-dup": {
@@ -1975,7 +2070,11 @@ document.addEventListener("click", async (e) => {
     }
     case "pf-reset":
       if (!armed(el, "Press again to reset")) return;
-      db.profiles[pf.id] = structuredClone(DEFAULT_PROFILES[pf.id]); persist(); draw(); toast("Profile reset"); break;
+      // The saved workflow is the user's own, not a default, so it stays.
+      db.profiles[pf.id] = { ...structuredClone(DEFAULT_PROFILES[pf.id]), ...(pf.workflow ? { workflow: pf.workflow } : {}) };
+      persist(); draw(); toast("Profile reset"); break;
+    case "pf-workflow": return saveProfileWorkflow(pf);
+    case "pf-workflow-forget": delete pf.workflow; persist(); draw(); toast("Workflow forgotten"); break;
     case "pf-del": {
       const used = db.recipes.filter((x) => x.profile === pf.id).length;
       if (used) return toast(`${used} recipe${used > 1 ? "s use" : " uses"} this profile. Switch ${used > 1 ? "them" : "it"} first.`);
@@ -2000,6 +2099,7 @@ document.addEventListener("click", async (e) => {
       db.settings.comfyUrl = base; persist(); toast("Saved " + base); heartbeat(); draw(); break;
     }
     case "export": exportLibrary(); break;
+    case "export-wildcards": return exportWildcards();
     case "sync-choose": {
       try { ui.sync.handle = await syncfs.chooseFolder(); }
       catch (e) { if (e && e.name !== "AbortError") toast("Couldn't open that folder"); return; }
@@ -2114,6 +2214,12 @@ document.addEventListener("input", (e) => {
   }
   if (t.classList.contains("prose") && t.dataset.i != null) { r.blocks[t.dataset.i].prose = t.value; persist(); return drawOutput(r); }
   if (t.dataset.pf && t.type !== "checkbox") { db.profiles[t.dataset.p][t.dataset.pf] = t.value; return persist(); }
+  if (t.dataset.pfs) {
+    const p = db.profiles[t.dataset.p], ps = (p.settings = p.settings || {}), v = t.value.trim();
+    if (t.dataset.pfs === "size") { const [w, h] = v.split(/[x×]/).map(Number); ps.width = w || undefined; ps.height = h || undefined; }
+    else ps[t.dataset.pfs] = ["steps", "cfg"].includes(t.dataset.pfs) ? (v === "" || !Number.isFinite(Number(v)) ? undefined : Number(v)) : v || undefined;
+    return persist();
+  }
   if (t.dataset.refNote) {
     const ref = charById(t.dataset.c).refs.find((x) => x.id === t.dataset.refNote);
     ref.note = t.value; return persist();

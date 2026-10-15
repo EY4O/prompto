@@ -100,6 +100,7 @@ A **model profile** decides how the blocks become a prompt:
 | Token counter | Shows an approximate CLIP token count and how many 75-token chunks it uses |
 | Quality tags | Added first in tag output, e.g. `masterpiece, best quality` |
 | Default negative | Used unless the recipe has its own; can be turned off (Flux Krea runs at CFG 1) |
+| Settings | Sampler, scheduler, steps, CFG and size for new recipes. A recipe moved to another profile takes that profile's settings, unless you've changed them by hand; then **Use … settings** next to the profile applies them |
 | Artist tags | Tags written `@name` are artists. Anima keeps the `@` (its model card says artist tags barely work without it); the other profiles write the bare name. Type `@` before a name, pick an artist from autocomplete, or file a booru post as a snippet to get one |
 
 The four starting profiles (Illustrious, Anima, Flux Krea, Qwen Image) are suggestions. Edit them, duplicate them, or add your own in **Settings → Model profiles**, and **Reset** restores a starting profile.
@@ -147,7 +148,7 @@ Each recipe keeps a gallery of the images made from it, up to 60:
 
 Click a result to open it larger, rate it, make it the recipe's cover, or copy its seed back into the recipe. Recipe cards show the average rating, and **Recipes** can be sorted by **Top rated** or **Most results**.
 
-**Compare** picks two to four results and shows them **side by side**: each with its rating and seed, and, against the first one you picked, the tags its prompt added or dropped. Variants from **Queue variants** come back with their own prompts, so this is the quickest way to see which roll won.
+**Compare** picks two to four results and shows them **side by side**: each with its rating and seed, and, against the first one you picked, the tags its prompt added or dropped. Results from **Queue on profiles** are labelled with their profile, so you can put the same recipe on two models next to each other. Variants from **Queue variants** come back with their own prompts, so this is the quickest way to see which roll won.
 </details>
 
 <details>
@@ -230,6 +231,8 @@ The output card shows one roll of the prompt. **Roll again** and **← Back** st
 Deleting a recipe, cast member or snippet shows **Undo** for a few seconds.
 
 **Queue variants** loads and queues 2–6 rolls in the open ComfyUI tab, one after another, all on the recipe's seed, so you can compare them side by side. Each roll is remembered, so the images come back to the recipe's **Results**.
+
+**Settings → Library → Export wildcards** writes your snippets as `.txt` files into a folder you pick, such as Impact Pack's `wildcards` folder or Forge's Dynamic Prompts folder: one file per snippet (one tag per line) and one per category (one snippet per line), so `__hair_color__` means the same thing there as in Prompto.
 </details>
 
 <details>
@@ -259,6 +262,7 @@ Underscores become spaces, except in emoticons such as `^_^`.
 - **Load into workflow** and **Selected node** edit the workflow in your open ComfyUI tab. Snippets' **→ Node** goes into the prompt box you last clicked into (at the cursor), or else the selected text nodes. Settings go to the first sampler, so a hires-fix pass keeps its own steps, and dropdown values are only set when ComfyUI offers them. In workflows that route the prompt through switches, text joins or wildcard processors, or feed the sampler from a parameters node, the text and settings go where ComfyUI actually reads them; bypassed nodes are left alone.
 - **LoRAs** fill the workflow's existing LoRA loader nodes in order, matched by file name even across folders, with the recipe's weight on both model and CLIP. Loaders the recipe doesn't use, or whose LoRA isn't installed, are bypassed, and Prompto says when the workflow needs more loader nodes. It never adds nodes itself.
 - With **ComfyUI-Prompto** installed, Prompto works through its bridge instead of ComfyUI's internals, syncs your library to the ComfyUI sidebar, and collects captures from ComfyUI.
+- **Queue on profiles**: in a profile's editor, **Use the open ComfyUI workflow** saves the workflow you have open as the one that profile runs, so an Anima profile can keep an Anima workflow and an Illustrious profile a checkpoint one. A recipe then shows **Queue on profiles**: it queues the recipe in each picked profile's workflow, with the prompt written for that profile and the recipe's seed, and the images come back to **Results** labelled with their profile. It queues from inside the ComfyUI tab, so it doesn't need `--enable-cors-header`.
 - **Missing models**: with ComfyUI-Prompto and [Model Librarian](https://github.com/EY4O/comfyui-model-librarian) installed, loading a recipe whose model or LoRAs aren't installed shows **Get them with Model Librarian** in ComfyUI. It opens the recipe there, finds the exact files by hash or Civitai version id, downloads them into the right folders, and can fill the workflow, adding LoRA loaders if it needs more.
 - Recent ComfyUI versions turn away requests that come straight from extensions. That's why Prompto goes through the open tab. **Queue saved graph** calls the API directly and may need ComfyUI started with `--enable-cors-header`.
 - The ComfyUI desktop app isn't a browser tab, so only **Queue saved graph** works with it.
@@ -295,7 +299,7 @@ Each device keeps its own ComfyUI address, LoRA list and Danbooru setting. Chrom
 <summary><b>💾 Data and permissions</b></summary>
 
 - Your library lives in `chrome.storage.local`; the imported tag list lives in IndexedDB. Use **Settings → Library → Export** for a backup. The tag list isn't included.
-- Network requests go only to Danbooru (posts, related tags and optional tag lookups), Civitai's images API (when you import from Civitai), the image itself when you save an image (to look for generation data), your ComfyUI address, and Google Fonts for the panel's typefaces.
+- Network requests go only to Danbooru (posts, related tags and optional tag lookups), Civitai's images API (when you import from Civitai), the image itself when you save an image (to look for generation data), and your ComfyUI address. The panel's typefaces (Oswald and IBM Plex Mono, both under the SIL Open Font License) are bundled, so it works offline.
 - Permissions: **side panel**, **storage** and **unlimited storage** for the library and images; **context menus** for right-click capture; **scripting** and **active tab** to read booru pages and reach the ComfyUI tab; access to `localhost`/`127.0.0.1` (ComfyUI), `*.donmai.us`, `gelbooru.com`, `safebooru.org`, `e621.net`/`e926.net` (boorus) and `civitai.com`/`civitai.green`/`civitai.red` (Civitai, including the **+ Prompto** button on its pages). Other ComfyUI addresses are requested when you save them.
 - Prompto never queues anything on its own. Deleting a recipe, profile or tag list takes a second press to confirm.
 </details>
@@ -309,7 +313,6 @@ Running from source, project layout and releasing are described in **[docs/DEVEL
 ## 🗺️ Roadmap
 
 - A Chrome Web Store listing.
-- Bundle the fonts so the panel looks right offline.
 
 ## 🤝 Contributing
 

@@ -25,9 +25,14 @@ lib/syncfs.js        the sync folder: picker, saved handle, prompto-sync.json
 lib/tags.js          tag list (CSV → IndexedDB), library tags, Danbooru tag lookups
 lib/autocomplete.js  the tag suggestion dropdown
 lib/comfy.js         ComfyUI heartbeat, tab bridge, in-page graph editing, queueing
+lib/snapshot.js      the library as ComfyUI-Prompto gets it: rendered prompts (for every profile), profiles, cast LoRAs
 lib/seed.js          sample data for first run
 icons/               extension icons (16, 32, 48, 128), drawn by tools/make-icons.py
+fonts/               Oswald and IBM Plex Mono (latin and latin-ext woff2, SIL OFL), so the panel works offline
 tools/make-icons.py  draws both projects' icons; needs Pillow and NumPy
+tools/export-samples.mjs  writes the sample library as ComfyUI-Prompto's samples.json
+tools/package.py     zips the extension for the Chrome Web Store
+tools/store-assets.py  draws the Web Store screenshots and promo tile; needs Pillow
 docs/                this file, README images
 ```
 
@@ -51,14 +56,15 @@ node --test
 
 | Suite | Covers |
 |---|---|
-| `render` | profiles (tags, prose, both), weights, negatives, character and outfit blocks, drafted prose, the checker, Forge export, tag parsing |
+| `render` | profiles (tags, prose, both), weights, negatives, artist tags, character and outfit blocks, drafted prose, the checker, Forge export, tag parsing |
+| `snapshot` | profile settings (applying them, telling untouched settings from edited ones), and the library ComfyUI-Prompto gets: profiles, every recipe rendered for every profile, cast LoRAs |
 | `prose` | tags → prose drafts: hair, eyes, count and age, species, scenes, templates |
 | `pngmeta` | PNG text chunks (tEXt, zTXt, iTXt), ComfyUI graphs (ControlNet, Flux), A1111 parameters |
 | `booru`, `civitai` | post and image parsing, character looks, tag sorting, sampler mapping |
 | `tags`, `wildcards`, `diff`, `importers`, `sync` | tag lists, wildcard rolls, version diffs, other tools' files, sync merging |
 | `comfy`, `card`, `seed` | loading into a mock ComfyUI graph, share-card chunks, sample data |
 | `cast` | deleting a cast member and the recipe blocks that used them, sorting, series |
-| `snippets` | wildcard names, duplicate detection and merging, unique names, category guesses, renaming snippets and categories (and rewriting recipes), removal |
+| `snippets` | wildcard names, duplicate detection and merging, unique names, category guesses, renaming snippets and categories (and rewriting recipes), removal, wildcard file export |
 | `undo` | restoring deleted items, and making sure a restored item beats its sync tombstone |
 
 GitHub Actions runs the same command on every push (`.github/workflows/test.yml`).
@@ -71,4 +77,5 @@ GitHub Actions runs the same command on every push (`.github/workflows/test.yml`
 
 1. Bump `version` in `manifest.json`: patch for fixes and small changes, minor for features.
 2. Commit and push to `main`.
-3. For the Chrome Web Store: zip the folder contents (without `.git`, `.claude` and `docs/`), and upload it in the Chrome Web Store developer dashboard. That needs a one-time developer registration; the icon set is in `icons/`.
+3. If the sample library in `lib/seed.js` changed, run `node tools/export-samples.mjs ../ComfyUI-Prompto/samples.json` and release ComfyUI-Prompto too.
+4. For the Chrome Web Store: `python tools/package.py` writes `dist/prompto-<version>.zip`; upload it in the developer dashboard. [STORE.md](STORE.md) has the listing text, permission justifications and images, and [PRIVACY.md](PRIVACY.md) is the privacy policy.

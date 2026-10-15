@@ -1,6 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { wildcardToken, findDuplicate, duplicateGroups, uniqueName, guessCategory, recipesUsing, renameSnippet, renameCategory, mergeSnippets, removeSnippet } from "../lib/snippets.js";
+import { wildcardToken, findDuplicate, duplicateGroups, uniqueName, guessCategory, recipesUsing, renameSnippet, renameCategory, mergeSnippets, removeSnippet, wildcardFiles } from "../lib/snippets.js";
 import { SEED } from "../lib/seed.js";
 
 const library = () => JSON.parse(JSON.stringify(SEED));
@@ -127,5 +127,24 @@ describe("snippets: sorting", () => {
     db.recipes[0].blocks.find((x) => Array.isArray(x.tags)).prose = "__moody_rim__";
     assert.equal(sortSnippets(db.snippets, db, "used")[0].name, "Moody rim");
     assert.deepEqual(sortSnippets(db.snippets, db, "added").map((s) => s.id), db.snippets.map((s) => s.id));
+  });
+});
+
+describe("wildcardFiles()", () => {
+  const sn = [
+    { cat: "Wildcards", name: "Hair color", tags: ["silver hair", "black hair"], prose: "" },
+    { cat: "Lighting", name: "Golden hour", tags: ["golden hour", "warm lighting"], prose: "" },
+    { cat: "Lighting", name: "Moody", tags: [], prose: "a dark room\nlit by one lamp" },
+    { cat: "Golden hour", name: "Other", tags: ["x"], prose: "" }
+  ];
+  const files = Object.fromEntries(wildcardFiles(sn).map((f) => [f.name, f.text]));
+  test("a snippet's file has one tag per line", () => {
+    assert.equal(files["hair_color.txt"], "silver hair\nblack hair\n");
+  });
+  test("a category's file has one snippet per line, prose on one line", () => {
+    assert.equal(files["lighting.txt"], "golden hour, warm lighting\na dark room lit by one lamp\n");
+  });
+  test("a snippet name wins over a category with the same name", () => {
+    assert.equal(files["golden_hour.txt"], "golden hour\nwarm lighting\n");
   });
 });

@@ -232,6 +232,8 @@ Deleting a recipe, cast member or snippet shows **Undo** for a few seconds.
 
 **Queue variants** loads and queues 2–6 rolls in the open ComfyUI tab, one after another, all on the recipe's seed, so you can compare them side by side. Each roll is remembered, so the images come back to the recipe's **Results**.
 
+A booru post filed as a snippet keeps the post's picture as the snippet's reference image: a 640px copy, so it stays when the post is gone and syncs with the rest of the library (sites whose image servers Prompto can't reach keep a link instead). The snippet's card shows it; **Edit** shows it larger, with **Open post** and **Remove image**.
+
 **Settings → Library → Export wildcards** writes your snippets as `.txt` files into a folder you pick, such as Impact Pack's `wildcards` folder or Forge's Dynamic Prompts folder: one file per snippet (one tag per line) and one per category (one snippet per line), so `__hair_color__` means the same thing there as in Prompto.
 </details>
 

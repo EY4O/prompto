@@ -97,6 +97,20 @@ describe("snippets: categories and duplicates", () => {
     assert.equal(b.prose, "__uraraka_ochaco__");
   });
 
+  test("merging keeps a reference image when the kept snippet has none", () => {
+    const db = library();
+    db.snippets.push({ id: "k", cat: "Scenes", name: "Keep", tags: ["a"], prose: "" },
+                     { id: "d", cat: "Scenes", name: "Drop", tags: ["a"], prose: "", image: "data:image/jpeg;base64,xx", source: "https://danbooru.donmai.us/posts/1" },
+                     { id: "o", cat: "Scenes", name: "Own", tags: ["b"], prose: "", image: "mine" },
+                     { id: "d2", cat: "Scenes", name: "Drop2", tags: ["b"], prose: "", image: "theirs" });
+    mergeSnippets(db, "k", ["d"]);
+    mergeSnippets(db, "o", ["d2"]);
+    const by = (id) => db.snippets.find((s) => s.id === id);
+    assert.equal(by("k").image, "data:image/jpeg;base64,xx");
+    assert.equal(by("k").source, "https://danbooru.donmai.us/posts/1");
+    assert.equal(by("o").image, "mine");
+  });
+
   test("renaming a category moves its snippets and its wildcard", () => {
     const db = library();
     const n = db.snippets.filter((s) => s.cat === "Lighting").length;

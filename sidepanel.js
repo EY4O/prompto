@@ -360,7 +360,11 @@ function fileItem(id, as) {
     const draft = { tags: tags ? parseTags(text).map((x) => x.t) : [], prose: tags ? "" : text };
     done();
     const dup = findDuplicate(db.snippets, draft);
-    if (dup) { toast(`Already in your snippets as ${dup.name}`); return go("snippet/" + dup.id); }
+    const pic = post && (post.image || post.preview);
+    if (dup) {
+      if (pic && !dup.image) attachSnippetImage(dup, pic, post.url);
+      toast(`Already in your snippets as ${dup.name}`); return go("snippet/" + dup.id);
+    }
     // A booru post is named after the post, not its character: the tags describe the picture.
     const cat = post ? "Scenes" : (draft.tags.length && guessCategory(draft.tags)) || "Unsorted";
     const base = post ? `${siteName(post)} ${post.id ? "#" + post.id : "tags"}` : text.split(/[,.]/)[0].slice(0, 32).trim() || "Snippet";
@@ -369,7 +373,26 @@ function fileItem(id, as) {
     persist();
     toast("Filed as snippet: name it and pick a category");
     go("snippet/" + sn.id);
+    if (pic) attachSnippetImage(sn, pic, post.url);
   }
+}
+
+// A snippet filed from a booru post keeps the post's picture as its reference:
+// a 640px copy, so it survives the post being deleted and syncs with the library.
+// When the image can't be fetched (the site's image host isn't in Prompto's
+// permissions), the link is kept instead.
+async function attachSnippetImage(sn, url, source = "") {
+  let src = null;
+  try {
+    const res = await fetch(url);
+    if (res.ok) src = await makeThumb(await res.blob(), 640);
+  } catch {}
+  const live = db.snippets.find((x) => x.id === sn.id);
+  if (!live) return;
+  live.image = src || url;
+  if (source) live.source = source;
+  persist();
+  if (ui.tab === "snippets" && !ui.recipeId && !view.contains(document.activeElement)) draw();
 }
 
 // ---------- Danbooru import sheet ----------
@@ -1487,7 +1510,8 @@ function snippetCard(x) {
   const node = (k) => ui.comfyTab ? `<button class="link" data-act="snip-node" data-id="${x.id}" data-k="${k}" title="Append to the selected ComfyUI node">→ Node</button>` : "";
   const head = `<div class="spread"><span class="snip-name">${esc(x.name)}</span>
     <div class="row">${x.tags.length ? `<button class="link" data-act="snip-copy" data-id="${x.id}" data-k="tags">Tags</button>` : ""}${x.prose ? `<button class="link" data-act="snip-copy" data-id="${x.id}" data-k="prose">Prose</button>` : ""}${node(x.tags.length ? "tags" : "prose")}<button class="link" data-act="snip-toggle" data-id="${x.id}">${open ? "Done" : "Edit"}</button></div></div>`;
-  if (!open) return `<div class="snip" id="s-${x.id}">${head}
+  if (!open) return `<div class="snip${x.image ? " has-img" : ""}" id="s-${x.id}">${head}
+    ${x.image ? `<button class="snip-ref-btn" data-act="snip-toggle" data-id="${x.id}" aria-label="Open snippet"><img class="snip-ref" src="${esc(x.image)}" alt="" loading="lazy"></button>` : ""}
     ${x.tags.length ? `<div class="chips">${x.tags.map((t) => `<span class="chip ro">${esc(t)}</span>`).join("")}</div>` : ""}
     ${x.prose ? `<p class="snip-prose">${esc(x.prose)}</p>` : ""}</div>`;
   const uses = recipesUsing(db, x.name).length;
@@ -1497,6 +1521,8 @@ function snippetCard(x) {
       <label>Category<input data-sf="cat" data-id="${x.id}" value="${esc(x.cat)}" list="snip-cats"></label>
     </div>
     <p class="kv">Use it as a wildcard: <span class="mono" data-token="${x.id}">${esc(wildcardToken(x.name))}</span>${uses ? ` · in ${plural(uses, "recipe")}` : ""}</p>
+    ${x.image ? `<figure class="snip-figure"><img src="${esc(x.image)}" alt="Reference for ${esc(x.name)}">
+      <figcaption class="row">${x.source ? `<a class="link" href="${esc(x.source)}" target="_blank" rel="noopener">Open post</a>` : ""}<button class="link" data-act="snip-img-del" data-id="${x.id}">Remove image</button></figcaption></figure>` : ""}
     <div class="group-label">Tags</div><div class="chips">${strChips(x.tags, "snip|" + x.id)}</div>
     <div class="group-label spread">Prose<button class="link" data-act="snip-draft" data-id="${x.id}">Write from tags</button></div>
     <textarea class="prose" data-sf="prose" data-id="${x.id}" rows="1" placeholder="a short natural-language version">${esc(x.prose)}</textarea>
@@ -1990,6 +2016,7 @@ document.addEventListener("click", async (e) => {
     }
     case "cast-toggle": ui.openChar = ui.openChar === el.dataset.c ? null : el.dataset.c; draw(); break;
     case "snip-toggle": ui.openSnip = ui.openSnip === el.dataset.id ? null : el.dataset.id; draw(); break;
+    case "snip-img-del": { const x = snipById(el.dataset.id); delete x.image; delete x.source; persist(); draw(); toast("Image removed"); break; }
     case "snip-draft": {
       const x = snipById(el.dataset.id);
       const text = proseFromTags(SNIP_BLOCK[x.cat] || "scene", x.tags, db.settings.proseTemplates);

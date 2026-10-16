@@ -807,7 +807,7 @@ function drawRecipe() {
       <div class="profiles" role="group" aria-label="Model profile">
         ${Object.values(db.profiles).map((x) => `<button data-act="profile" data-p="${esc(x.id)}" aria-pressed="${x.id === p.id}"><b>${esc(x.label)}</b><small>${esc(x.base)}</small></button>`).join("")}
       </div>
-      <p class="profile-hint kv">${esc([settingsSummary(p), p.hint].filter(Boolean).join(" · "))}${p.weights ? " · weights on" : " · weights ignored"} · <a class="link" href="#settings" data-act="edit-profile" data-p="${esc(p.id)}">Edit profile</a>${p.settings && !usesProfileSettings(s, p) ? ` · <button class="link" data-act="use-pf-settings" title="Sampler, scheduler, steps, CFG and size from the profile; the seed and model stay">Use ${esc(p.label)}'s settings</button>` : ""}</p>
+      <p class="profile-hint kv">${settingsSummary(p) ? `${esc(p.label)} suggests ` : ""}${esc([settingsSummary(p), p.hint].filter(Boolean).join(" · "))}${p.weights ? " · weights on" : " · weights ignored"} · <a class="link" href="#settings" data-act="edit-profile" data-p="${esc(p.id)}">Edit profile</a>${p.settings && !usesProfileSettings(s, p) ? ` · <button class="link" data-act="use-pf-settings" title="Sampler, scheduler, steps, CFG and size from the profile; the seed and model stay">Use ${esc(p.label)}'s settings</button>` : ""}</p>
       <label class="recipe-folder">Folder <select id="recipe-folder"><option value="">Unfiled</option>${db.folders.map((fo) => `<option value="${fo.id}" ${r.folder === fo.id ? "selected" : ""}>${esc(fo.name)}</option>`).join("")}</select></label>
     </section>
 
@@ -865,11 +865,13 @@ function loraRows(r) {
   const have = installed && new Set(installed.map(loraBase));
   const rows = (r.settings.loras || []).map((l, j) => {
     const missing = have && !have.has(loraBase(l.name));
+    // Civitai's model name reads better than a file name like 7JP5DRE99….safetensors.
+    const shown = l.label || loraLabel(l.name);
     return `<div class="lora-row${missing ? " missing" : ""}">
-      <span class="lora-name" title="${esc(l.name)}${missing ? " (not in ComfyUI's loras folder)" : ""}">${missing ? "⚠ " : ""}${esc(loraLabel(l.name))}</span>
-      <input type="range" min="0" max="2" step="0.05" value="${l.w}" data-lora-w="${j}" aria-label="Weight for ${esc(loraLabel(l.name))}">
+      <span class="lora-name" title="${esc(l.name)}${missing ? " (not in ComfyUI's loras folder)" : ""}">${missing ? "⚠ " : ""}${esc(shown)}</span>
+      <input type="range" min="0" max="2" step="0.05" value="${l.w}" data-lora-w="${j}" aria-label="Weight for ${esc(shown)}">
       <input class="lora-num" type="number" min="-2" max="3" step="0.05" value="${l.w}" data-lora-w="${j}" aria-label="Weight">
-      <button data-act="lora-del" data-j="${j}" aria-label="Remove ${esc(loraLabel(l.name))}">×</button>
+      <button data-act="lora-del" data-j="${j}" aria-label="Remove ${esc(shown)}">×</button>
     </div>`;
   }).join("");
   return `<span class="lora-label">LoRAs</span>${rows}<input class="lora-add" placeholder="${installed ? `+ LoRA (${installed.length} installed)` : "+ LoRA name"}" aria-label="Add a LoRA" spellcheck="false">`;

@@ -168,3 +168,47 @@ describe("civitai: the original file fills in the workflow", () => {
     assert.equal(withFileRecipe(api, { ...file, positive: "other" }).positive, "1girl, smile");
   });
 });
+
+describe("civitai: generator images named by version id", () => {
+  // The shape of an image made with Civitai's own generator: resources by version id only.
+  const item = { id: 1, baseModel: "Krea 2 Turbo", width: 832, height: 1248, url: "https://image.civitai.com/x/original=true/a.jpeg",
+    meta: { prompt: "a cat", negativePrompt: "blurry", steps: 10, cfgScale: 1, seed: 1025711967, sampler: "euler", workflow: "txt2img", ecosystem: "Krea2",
+      civitaiResources: [{ type: "diffusionmodel", weight: 1, modelVersionId: 3072332 }, { type: "lora", weight: 0.75, modelVersionId: 3391179 }] } };
+  const versions = {
+    3072332: { name: "v1.0", model: { name: "Krea 2 Turbo" }, files: [{ name: "other.safetensors", primary: false, hashes: { SHA256: "AA" } }, { name: "krea2Turbo_v10.safetensors", primary: true, hashes: { SHA256: "EB4D" } }] },
+    3391179: { name: "V2.0", model: { name: "Vibrant_Outline" }, files: [{ name: "vibrant_outline_krea2_V2.0.safetensors", primary: true, hashes: { SHA256: "6069" } }] }
+  };
+
+  test("the generator's checkpoint (a diffusionmodel) keeps its version id", () => {
+    const r = civitaiToRecipe(item);
+    assert.deepEqual(r.settings.modelRef, { versionId: 3072332 });
+    assert.deepEqual([r.settings.steps, r.settings.cfg, r.settings.seed], [10, 1, 1025711967]);
+  });
+
+  test("version ids become names, files and hashes", async () => {
+    const { nameResources } = await import("../lib/civitai.js");
+    const calls = [];
+    const r = await nameResources(civitaiToRecipe(item), async (id) => { calls.push(id); return versions[id]; });
+    assert.equal(r.settings.model, "krea2Turbo_v10.safetensors");
+    assert.deepEqual(r.settings.modelRef, { versionId: 3072332, hash: "eb4d" });
+    const [l] = r.settings.loras;
+    assert.deepEqual([l.name, l.label, l.hash, l.versionId, l.w], ["vibrant_outline_krea2_V2.0.safetensors", "Vibrant_Outline", "6069", 3391179, 0.75]);
+    assert.deepEqual(calls.sort(), [3072332, 3391179]);
+  });
+
+  test("a failed lookup leaves the resource as it was", async () => {
+    const { nameResources } = await import("../lib/civitai.js");
+    const before = civitaiToRecipe(item);
+    const r = await nameResources(before, async () => { throw new Error("offline"); });
+    assert.equal(r.settings.loras[0].name, before.settings.loras[0].name);
+    assert.equal(r.settings.model, "");
+  });
+
+  test("named LoRAs aren't looked up again", async () => {
+    const { nameResources } = await import("../lib/civitai.js");
+    const meta = { settings: { model: "x.safetensors", loras: [{ name: "detail.safetensors", w: 1, versionId: 5 }] } };
+    let n = 0;
+    await nameResources(meta, async () => { n++; return versions[3391179]; });
+    assert.equal(n, 0);
+  });
+});

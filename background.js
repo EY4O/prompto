@@ -1,7 +1,7 @@
 // Capture plumbing. Everything captured here lands in `captures`; the side
 // panel drains that queue into its inbox, so the two never overwrite each other.
 import { postIdFromUrl, fetchPost, e621IdFromUrl, fetchE621 } from "./lib/booru.js";
-import { imageIdFromUrl, postIdFromUrl as civitaiPostId, hostOf, fetchCivitaiImage, fetchCivitaiPost, hasMeta, civitaiToRecipe, withFileRecipe, smallImage } from "./lib/civitai.js";
+import { imageIdFromUrl, postIdFromUrl as civitaiPostId, hostOf, fetchCivitaiImage, fetchCivitaiPost, hasMeta, civitaiToRecipe, withFileRecipe, nameResources, fetchVersion, smallImage } from "./lib/civitai.js";
 import { readImageText, recipeFromText } from "./lib/pngmeta.js";
 
 const CIVITAI_PATTERNS = ["https://civitai.com/*", "https://civitai.green/*", "https://civitai.red/*"];
@@ -122,11 +122,19 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 // has generation data). The page's own host (.com/.green/.red) is kept.
 async function captureCivitai(url) {
   const host = hostOf(url);
+  // One lookup per model version, shared by every image of a post.
+  const versions = new Map();
+  const lookup = (id) => {
+    if (!versions.has(id)) versions.set(id, fetchVersion(id, host));
+    return versions.get(id);
+  };
   const one = async (item) => {
     const page = `https://${host}/images/${item.id}`;
     let meta = civitaiToRecipe(item, page);
     // The API rarely has the ComfyUI workflow; the original file often does.
     if (!meta.comfy) meta = withFileRecipe(meta, await recipeFromImageUrl(item.url));
+    // Images from Civitai's generator name their models by version id only.
+    meta = await nameResources(meta, lookup);
     await pushCapture({ kind: "png", format: "Civitai", meta, thumb: smallImage(item.url), title: `Civitai #${item.id}`, url: page, source: host });
   };
   const imageId = imageIdFromUrl(url);

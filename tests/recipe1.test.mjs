@@ -39,6 +39,16 @@ describe("toMeta / fromMeta", () => {
     assert.deepEqual([back.model.file, back.model.hash, back.model.civitai_version_id], ["illustriousXL_v20", "1a2b3c4d5e", 999]);
     partial(back.loras, [{ file: "watercolor_v3", name: "Watercolor Wash", display_name: "Watercolor Wash", hash: "aaaa1111bb", civitai_version_id: 111, weight: 0.8 }]);
   });
+  test("a recipe sent from Model Librarian (a ComfyUI capture of kind 'recipe') keeps its references", () => {
+    const rec = { schema: "recipe/1", format: "ComfyUI", title: "Rainy alley", base_model: "Illustrious",
+      prompt: { positive: "rain, neon", negative: "blurry" }, settings: { steps: 28, cfg: 5, seed: 7, sampler: "euler" },
+      model: { file: "Illustrious/aurora.safetensors", hash: "c".repeat(64), civitai_version_id: 1104 },
+      loras: [{ file: "Illustrious/ILFF7Tifa.safetensors", name: "ILFF7Tifa", hash: "d".repeat(64), civitai_version_id: 77, weight: 0.8 }] };
+    const meta = R1.toMeta(rec);
+    partial(meta, { format: "ComfyUI", positive: "rain, neon", negative: "blurry",
+      settings: { model: "Illustrious/aurora.safetensors", steps: 28, seed: 7, baseModel: "Illustrious", modelRef: { hash: "c".repeat(64), versionId: 1104 },
+        loras: [{ name: "Illustrious/ILFF7Tifa.safetensors", w: 0.8, hash: "d".repeat(64), versionId: 77 }] } });
+  });
   test("a plain Prompto recipe has no references to lose", () => {
     const back = R1.fromMeta({ settings: { model: "x.safetensors", loras: [{ name: "Illustrious\\a.safetensors", w: 0.6 }], steps: 20 } }, { positive: "p" });
     partial(back, { prompt: { positive: "p" }, settings: { steps: 20 }, model: { file: "x.safetensors", name: "x", hash: null }, loras: [{ file: "Illustrious\\a.safetensors", name: "a", weight: 0.6 }] });

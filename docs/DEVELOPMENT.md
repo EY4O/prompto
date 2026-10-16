@@ -52,7 +52,7 @@ Node 18+ and nothing else: the suites use Node's built-in test runner and never 
 node --test
 ```
 
-`tests/fixtures/recipe1.json` is shared with [Model Librarian](https://github.com/EY4O/comfyui-model-librarian) (same path there): both parsers run every case, so the two stay in step. Change both copies together.
+`tests/fixtures/recipe1.json` is shared with [Model Librarian](https://github.com/EY4O/ComfyUI-Model-Librarian) (same path there): both parsers run every case, so the two stay in step. Change both copies together.
 
 | Suite | Covers |
 |---|---|

@@ -130,7 +130,7 @@ Generators hide their settings inside the image file: ComfyUI stores the queued 
 
 - **ComfyUI**: it follows the sampler's positive and negative inputs back to the text nodes, including through ControlNet and Flux guidance nodes, switches, text joins, regex replaces and Impact's wildcard processor (the `parameters` text fills in when a graph can't be traced), and collects the model, LoRAs (plain loaders, LoRA Manager, rgthree's Power Lora Loader and LoRA stacks), sampler, scheduler, steps, CFG, seed and size. The graph is kept, so **Queue saved graph** can run it again with your edited prompt.
 - **A1111/Forge**: it splits out the negative prompt and settings line, pulls `<lora:…>` tags out of the prompt, and maps sampler names like "DPM++ 2M Karras" to ComfyUI's.
-- **Exact models**: model and LoRA hashes (`Model hash`, `Lora hashes`, `Hashes`) and Civitai version ids are kept with the recipe, so [Model Librarian](https://github.com/EY4O/comfyui-model-librarian) can download exactly the right files.
+- **Exact models**: model and LoRA hashes (`Model hash`, `Lora hashes`, `Hashes`) and Civitai version ids are kept with the recipe, so [Model Librarian](https://github.com/EY4O/ComfyUI-Model-Librarian) can download exactly the right files.
 
 **Save image to Prompto** on a Civitai image uses Civitai's API (below); on any other site it tries the original file, so images that still carry their data come in as recipes. Images without generation data are kept as reference images.
 
@@ -179,7 +179,7 @@ A version is saved each time a recipe leaves Prompto (**Copy prompt**, **Copy fo
 | `prompto` | Prompto | the recipe with its cast members and model profile, or the cast member |
 | `parameters` | Forge, A1111 and anything that reads their format | the prompt, negative and settings, with wildcards rolled |
 | `prompt` | ComfyUI | the recipe's ComfyUI graph with the current prompt, when it has one |
-| `recipe` | [Model Librarian](https://github.com/EY4O/comfyui-model-librarian) and anything that reads the shared [`recipe/1` format](https://github.com/EY4O/comfyui-model-librarian/blob/main/docs/RECIPE_FORMAT.md) | the prompt, settings and exact model references (hashes, Civitai version ids) |
+| `recipe` | [Model Librarian](https://github.com/EY4O/ComfyUI-Model-Librarian) and anything that reads the shared [`recipe/1` format](https://github.com/EY4O/ComfyUI-Model-Librarian/blob/main/docs/RECIPE_FORMAT.md) | the prompt, settings and exact model references (hashes, Civitai version ids) |
 
 Drop a card on Prompto and it appears in the inbox as a **Prompto card**; **Import** adds it. Characters on a card are matched to your cast by trigger word (or name), so a shared recipe uses your existing Rin instead of a duplicate; new outfits and tags are merged in. Cards leave out results, versions and reference images. A cover image from another site can only be drawn if that site allows it; otherwise the card has no cover.
 </details>
@@ -265,7 +265,7 @@ Underscores become spaces, except in emoticons such as `^_^`.
 - **LoRAs** fill the workflow's existing LoRA loader nodes in order, matched by file name even across folders, with the recipe's weight on both model and CLIP. Loaders the recipe doesn't use, or whose LoRA isn't installed, are bypassed, and Prompto says when the workflow needs more loader nodes. It never adds nodes itself.
 - With **ComfyUI-Prompto** installed, Prompto works through its bridge instead of ComfyUI's internals, syncs your library to the ComfyUI sidebar, and collects captures from ComfyUI.
 - **Queue on profiles**: in a profile's editor, **Use the open ComfyUI workflow** saves the workflow you have open as the one that profile runs, so an Anima profile can keep an Anima workflow and an Illustrious profile a checkpoint one. A recipe then shows **Queue on profiles**: it queues the recipe in each picked profile's workflow, with the prompt written for that profile and the recipe's seed, and the images come back to **Results** labelled with their profile. It queues from inside the ComfyUI tab, so it doesn't need `--enable-cors-header`.
-- **Missing models**: with ComfyUI-Prompto and [Model Librarian](https://github.com/EY4O/comfyui-model-librarian) installed, loading a recipe whose model or LoRAs aren't installed shows **Get them with Model Librarian** in ComfyUI. It opens the recipe there, finds the exact files by hash or Civitai version id, downloads them into the right folders, and can fill the workflow, adding LoRA loaders if it needs more.
+- **Missing models**: with ComfyUI-Prompto and [Model Librarian](https://github.com/EY4O/ComfyUI-Model-Librarian) installed, loading a recipe whose model or LoRAs aren't installed shows **Get them with Model Librarian** in ComfyUI. It opens the recipe there, finds the exact files by hash or Civitai version id, downloads them into the right folders, and can fill the workflow, adding LoRA loaders if it needs more.
 - Recent ComfyUI versions turn away requests that come straight from extensions. That's why Prompto goes through the open tab. **Queue saved graph** calls the API directly and may need ComfyUI started with `--enable-cors-header`.
 - The ComfyUI desktop app isn't a browser tab, so only **Queue saved graph** works with it.
 </details>

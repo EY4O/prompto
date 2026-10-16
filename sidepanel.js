@@ -2,7 +2,7 @@ import { snapshot as librarySnapshot, castDraft as draftCast } from "./lib/snaps
 import { DEFAULT_PROFILES, OLD_ANIMA, OLD_HINTS, usesProfileSettings, applyProfileSettings, settingsSummary, STOCKS, huesOf, BLOCK_TYPES, render, draftProse, loraBase, estimateClipTokens, lint, toA1111, looksLikeTags, parseTags, profileFor } from "./lib/render.js";
 import { DEFAULT_TEMPLATES, SLOT_HELP, proseFromTags } from "./lib/prose.js";
 import { readRecipeFromFile, parseComfy } from "./lib/pngmeta.js";
-import { fromMeta as toRecipe1 } from "./lib/recipe1.js";
+import { fromMeta as toRecipe1, toMeta } from "./lib/recipe1.js";
 import { SEED } from "./lib/seed.js";
 import { removeCharacter, sortCast, seriesOf } from "./lib/cast.js";
 import { wildcardToken, findDuplicate, duplicateGroups, sortSnippets, uniqueName, guessCategory, recipesUsing, renameSnippet, renameCategory, mergeSnippets, removeSnippet, wildcardFiles } from "./lib/snippets.js";
@@ -1340,6 +1340,10 @@ const snapshot = () => librarySnapshot(db);
 function captureToInbox(cap) {
   const base = { id: "in_" + cap.id, createdAt: cap.createdAt || Date.now(), source: cap.source || "ComfyUI" };
   if (cap.kind === "text") return { ...base, kind: "text", text: cap.text };
+  // A shared recipe/1, e.g. sent from Model Librarian's Recipes tab: keeps the model hashes and Civitai ids.
+  if (cap.kind === "recipe" && cap.recipe) {
+    try { return { ...base, kind: "png", format: cap.recipe.format || "Recipe", title: cap.title || cap.recipe.title, thumb: cap.thumb || null, meta: toMeta(cap.recipe) }; } catch {}
+  }
   if (cap.graph) {
     try { return { ...base, kind: "png", format: "ComfyUI", title: cap.filename, thumb: cap.thumb, meta: parseComfy(cap.graph) }; } catch {}
   }

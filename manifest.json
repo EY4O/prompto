@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Prompto",
-  "version": "0.25.3",
-  "description": "Capture, organize and remix Stable Diffusion prompts, image recipes and character tags.",
+  "version": "0.25.4",
+  "description": "Retired: no longer developed. Capture, organize and remix Stable Diffusion prompts, image recipes and character tags.",
   "minimum_chrome_version": "116",
   "icons": {
     "16": "icons/icon16.png",

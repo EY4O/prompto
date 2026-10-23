@@ -10,6 +10,9 @@
   <a href="https://ko-fi.com/looneth"><img src="https://img.shields.io/badge/Ko--fi-Support-FF813F?logo=ko-fi&logoColor=white" alt="Support on Ko-fi"></a>
 </p>
 
+> **Retired.** Prompto is no longer developed and this repository is archived (read-only). Recipes from images, CivitAI pages and your own runs now live in [Model Librarian](https://github.com/EY4O/ComfyUI-Model-Librarian) and its browser extension. An installed copy keeps working as it is.
+
+
 A Chrome side-panel extension for people who make images with Stable Diffusion, Illustrious, Flux and Qwen. It's a home for the ideas you run into while browsing: tags from a Reddit thread, a character from Danbooru, the settings inside a PNG someone shared. Ideas land in an inbox, become reusable recipes, characters and snippets, and come out as the right prompt for whichever model you're using, as booru tags, natural language or both. It works without ComfyUI running, and connects to ComfyUI or Forge when you want it to. Open it from the toolbar icon or with **Alt+Shift+P**.
 
 ![Prompto's recipe editor, its prompt output and rated results](docs/images/hero.png)
